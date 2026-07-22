@@ -4,9 +4,12 @@ import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import { watchedBroadcasts } from "../db/schema.js";
 import { listWatchedBroadcasts, watchBroadcast } from "./broadcast-watch-service.js";
+import { setExternalNotificationSettings } from "./external-notification-service.js";
 import { listNotifications } from "./notification-service.js";
 import { RescanTracker } from "./rescan-tracker.js";
 import { StatusPoller } from "./status-poller.js";
+
+const ENCRYPTION_KEY = "y".repeat(32);
 
 function fakeManager(
   overrides: Partial<{
@@ -356,6 +359,56 @@ describe("StatusPoller", () => {
       await poller.refresh();
 
       expect(listNotifications(db).some((n) => n.type === "wallet-sync-delayed")).toBe(false);
+    });
+  });
+
+  describe("external notification fan-out (spec §20.2)", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function freshDb(): Db {
+      const created = createDb(":memory:");
+      runMigrations(created);
+      return created;
+    }
+
+    it("fans an in-app notification out externally when an encryptionKey is supplied", async () => {
+      const db = freshDb();
+      setExternalNotificationSettings(db, ENCRYPTION_KEY, {
+        ntfy: { enabled: true, url: "https://ntfy.sh/my-topic" },
+        discord: { enabled: false, url: "" },
+      });
+      const fetchSpy = vi.fn(
+        async (_url: string, _init?: RequestInit) => new Response(null, { status: 200 }),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const { manager } = fakeManager({ status: false });
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+      await poller.refresh();
+
+      await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      expect(fetchSpy.mock.calls[0]?.[1]).toMatchObject({
+        body: expect.stringContaining("Node is unreachable"),
+      });
+    });
+
+    it("does not fan out when no encryptionKey is supplied", async () => {
+      const db = freshDb();
+      setExternalNotificationSettings(db, ENCRYPTION_KEY, {
+        ntfy: { enabled: true, url: "https://ntfy.sh/my-topic" },
+        discord: { enabled: false, url: "" },
+      });
+      const fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", fetchSpy);
+
+      const { manager } = fakeManager({ status: false });
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      expect(listNotifications(db).length).toBeGreaterThan(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 });

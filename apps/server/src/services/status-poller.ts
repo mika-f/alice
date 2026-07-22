@@ -58,7 +58,12 @@ export class StatusPoller {
     private readonly db: Db | null = null,
     private readonly intervalMs = 30_000,
     private readonly rescanTracker: RescanTracker | null = null,
+    private readonly encryptionKey: string | null = null,
   ) {}
+
+  private notify(input: Parameters<typeof createNotification>[1]): void {
+    createNotification(this.db!, input, this.encryptionKey ?? undefined);
+  }
 
   start(): void {
     if (this.timer) return;
@@ -120,7 +125,7 @@ export class StatusPoller {
     if (isActive) {
       if (!this.activeProblems.has(type)) {
         this.activeProblems.add(type);
-        createNotification(this.db!, { type, message });
+        this.notify({ type, message });
       }
     } else {
       this.activeProblems.delete(type);
@@ -159,13 +164,13 @@ export class StatusPoller {
       const previousCategory = this.lastRenewalCategory.get(item.name);
       if (category !== previousCategory) {
         if (category === "recommended") {
-          createNotification(this.db!, {
+          this.notify({
             type: "renewal-approaching",
             name: item.name,
             message: `${item.name} is approaching its renewal window`,
           });
         } else if (category === "imminent") {
-          createNotification(this.db!, {
+          this.notify({
             type: "expiration-approaching",
             name: item.name,
             message: `${item.name} is close to expiring — renew soon`,
@@ -176,13 +181,13 @@ export class StatusPoller {
 
       const previousTransfer = this.lastTransferState.get(item.name);
       if (previousTransfer !== undefined && previousTransfer !== item.transferState) {
-        createNotification(this.db!, {
+        this.notify({
           type: "transfer-state-changed",
           name: item.name,
           message: `${item.name}'s transfer state changed from ${previousTransfer} to ${item.transferState}`,
         });
         if (item.transferState === "finalizable") {
-          createNotification(this.db!, {
+          this.notify({
             type: "finalize-available",
             name: item.name,
             message: `${item.name}'s transfer can now be finalized`,
@@ -210,13 +215,13 @@ export class StatusPoller {
       const label = item.label ? `${item.label} (${item.txid})` : item.txid;
 
       if (tx && tx.confirmations > 0) {
-        createNotification(this.db!, {
+        this.notify({
           type: "tx-confirmed",
           message: `Transaction confirmed: ${label}`,
         });
         unwatchBroadcast(this.db!, item.txid);
       } else if (!tx && Date.now() - item.createdAt.getTime() > BROADCAST_FAILURE_GRACE_MS) {
-        createNotification(this.db!, {
+        this.notify({
           type: "tx-failed",
           message: `Transaction appears to have failed (dropped from the mempool): ${label}`,
         });

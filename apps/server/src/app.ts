@@ -63,7 +63,7 @@ export function createApp(
   app.route("/api", createDiagnosticsRoutes(db, env, hsdManager));
   app.route("/api", createWalletRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNameRoutes(db, env, hsdManager, rescanTracker));
-  app.route("/api", createNotificationRoutes(db));
+  app.route("/api", createNotificationRoutes(db, env));
   app.route("/api", createAuditRoutes(db));
 
   mountStaticWeb(app);

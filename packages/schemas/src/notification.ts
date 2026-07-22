@@ -8,3 +8,22 @@ export const renewalThresholdsRequestSchema = z.object({
 });
 
 export type RenewalThresholdsRequestBody = z.infer<typeof renewalThresholdsRequestSchema>;
+
+/**
+ * `url` may be submitted empty to mean "leave the existing configured value unchanged" (so
+ * toggling `enabled` doesn't force retyping a webhook URL the server already has); required only
+ * when the channel is being enabled for the first time. Enforced server-side, not by this schema.
+ */
+export const externalNotificationChannelRequestSchema = z.object({
+  enabled: z.boolean(),
+  url: z.string().max(2000),
+});
+
+export const externalNotificationSettingsRequestSchema = z.object({
+  ntfy: externalNotificationChannelRequestSchema,
+  discord: externalNotificationChannelRequestSchema,
+});
+
+export type ExternalNotificationSettingsRequestBody = z.infer<
+  typeof externalNotificationSettingsRequestSchema
+>;

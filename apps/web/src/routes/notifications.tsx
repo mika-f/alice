@@ -45,6 +45,7 @@ function NotificationsPage() {
         <h1>Notifications</h1>
         <div className="field-row">
           <Link to="/settings/notifications">Thresholds</Link>
+          <Link to="/settings/external-notifications">External notifications</Link>
           <Link to="/">Back to dashboard</Link>
         </div>
       </div>

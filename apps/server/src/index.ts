@@ -13,7 +13,7 @@ runMigrations(db);
 
 const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
 const rescanTracker = new RescanTracker();
-const statusPoller = new StatusPoller(hsdManager, db, undefined, rescanTracker);
+const statusPoller = new StatusPoller(hsdManager, db, undefined, rescanTracker, env.ENCRYPTION_KEY);
 statusPoller.start();
 
 const app = createApp(env, hsdManager, db, statusPoller, rescanTracker);

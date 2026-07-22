@@ -7,6 +7,7 @@ import {
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { notifications, settings } from "../db/schema.js";
+import { dispatchExternalNotification } from "./external-notification-service.js";
 
 const RENEWAL_THRESHOLDS_KEY = "renewal_thresholds";
 
@@ -27,10 +28,24 @@ function toAppNotification(row: typeof notifications.$inferSelect): AppNotificat
   };
 }
 
-export function createNotification(db: Db, input: CreateNotificationInput): void {
+/**
+ * `encryptionKey` is optional so callers without it (tests, one-off scripts) can still record an
+ * in-app notification without fanning out externally. `input.message` is always the same
+ * pre-built, safe string used for the in-app row — never re-derived from raw data — so the §20.2
+ * exclusion list (seed/keys/password/full balance/raw errors) holds for external channels too.
+ */
+export function createNotification(
+  db: Db,
+  input: CreateNotificationInput,
+  encryptionKey?: string,
+): void {
   db.insert(notifications)
     .values({ type: input.type, name: input.name ?? null, message: input.message })
     .run();
+
+  if (encryptionKey) {
+    dispatchExternalNotification(db, encryptionKey, input.message);
+  }
 }
 
 export function listNotifications(db: Db, limit = 100): AppNotification[] {

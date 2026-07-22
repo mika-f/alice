@@ -169,4 +169,97 @@ describe("notification routes", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  describe("external notifications (spec §20.2)", () => {
+    it("reports disabled/unconfigured channels by default, never leaking a URL", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      await setUpAndLogIn(app, jar);
+
+      const res = await app.request("/api/settings/external-notifications", {
+        headers: { cookie: jar.header() },
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        ntfy: { enabled: false, configured: false },
+        discord: { enabled: false, configured: false },
+      });
+    });
+
+    it("saves a channel config and the GET response never echoes the URL back", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+
+      const putRes = await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: true, url: "https://ntfy.sh/my-topic" },
+        discord: { enabled: false, url: "" },
+      });
+      expect(putRes.status).toBe(200);
+      const body = JSON.stringify(await putRes.json());
+      expect(body).not.toContain("ntfy.sh");
+
+      const getRes = await app.request("/api/settings/external-notifications", {
+        headers: { cookie: jar.header() },
+      });
+      expect(await getRes.json()).toEqual({
+        ntfy: { enabled: true, configured: true },
+        discord: { enabled: false, configured: false },
+      });
+    });
+
+    it("rejects enabling a channel with no URL and none previously configured", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+
+      const res = await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: true, url: "" },
+        discord: { enabled: false, url: "" },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("keeps a previously configured URL when toggling enabled with a blank URL", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+
+      await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: true, url: "https://ntfy.sh/my-topic" },
+        discord: { enabled: false, url: "" },
+      });
+
+      const disableRes = await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: false, url: "" },
+        discord: { enabled: false, url: "" },
+      });
+      expect(disableRes.status).toBe(200);
+
+      const reenableRes = await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: true, url: "" },
+        discord: { enabled: false, url: "" },
+      });
+      expect(reenableRes.status).toBe(200);
+      expect(await reenableRes.json()).toEqual({
+        ntfy: { enabled: true, configured: true },
+        discord: { enabled: false, configured: false },
+      });
+    });
+
+    it("records the settings change in the audit log", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+
+      await req(app, jar, "PUT", "/api/settings/external-notifications", csrf, {
+        ntfy: { enabled: true, url: "https://ntfy.sh/my-topic" },
+        discord: { enabled: false, url: "" },
+      });
+
+      const auditRes = await app.request("/api/audit-log", { headers: { cookie: jar.header() } });
+      const entries = (await auditRes.json()) as { action: string }[];
+      expect(entries.some((e) => e.action === "settings.external_notifications")).toBe(true);
+    });
+  });
 });

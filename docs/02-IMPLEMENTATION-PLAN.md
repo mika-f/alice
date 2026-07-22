@@ -308,7 +308,7 @@ GET  /ready
 
 ### Phase 5: 運用強化(初期リリース後)
 
-- [ ] 外部通知(ntfy / Discord Webhook から着手、秘密情報のマスク §20.2)
+- [x] 外部通知(ntfy / Discord Webhook、秘密情報のマスク §20.2) — 有効化した各チャンネルへ、アプリ内通知と同じ事前構築済みメッセージ文字列をそのままファンアウト(専用のメッセージを別途組み立てない)ため、Seed/Private key/Wallet password/API Key/全残高/完全な内部エラー情報が混入しない。チャンネル URL(ntfy トピック URL・Discord webhook URL)は API キーと同等の bearer capability として ENCRYPTION_KEY で暗号化して settings テーブルに保存し、`GET /api/settings/external-notifications` では値を返さず `configured` フラグのみ返却。空文字での PUT は既存 URL を保持(有効/無効の切り替えだけなら再入力不要)。送信はベストエフォート(await せず、失敗は握りつぶし、リトライなし)で in-app 通知の作成をブロックしない。`POST /.../test` で疎通確認可能。Web の `/settings/external-notifications` ページで設定。
 - [ ] Web Push
 - [x] 監査ログ(書き込み操作の記録) — `audit_log` テーブル + `auditLog()` ミドルウェアを wallet(send/lock/unlock/import-mnemonic)・name(update/renew/renew-batch/transfer/finalize/revoke)・connection(update)・auth(logout-all/totp-disable/recovery-regen)の各書き込みルートの先頭に配置し、成功・失敗(下流の reauth/validation 拒否を含む)を outcome として記録。リクエストボディは一切保存しない(§21.6)。`GET /api/audit-log` + Web の一覧ページで閲覧可能。
 - [x] バックアップ確認リマインダー(§10.3) + ダッシュボード警告の拡充 — `settings` テーブルに自己申告の最終バックアップ確認時刻を保存(`GET/POST /api/settings/backup`)、30日経過または未確認で `backup-stale` 警告。§10.3 の警告一覧のうち Renewal 接近/Finalize 可能を除く7項目(Node/Wallet 接続断、Node/Wallet 未同期、Network 不一致、Wallet ロック中、hsd バージョン非対応)を `computeDashboardWarnings()` として `/api/status` の `warnings` 配列に集約し、ダッシュボードに常時表示(通知システムとは別で、現在の状態から毎回再計算される — 一度きりのイベント通知ではない)。Network 不一致判定のため `walletStatusResponseSchema` に `network` を追加。
