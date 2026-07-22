@@ -10,6 +10,7 @@ import { createAuditRoutes } from "./routes/audit.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createBackupRoutes } from "./routes/backup.js";
 import { createConnectionRoutes } from "./routes/connection.js";
+import { createDiagnosticsRoutes } from "./routes/diagnostics.js";
 import { healthRoute } from "./routes/health.js";
 import { createNameRoutes } from "./routes/name.js";
 import { createNotificationRoutes } from "./routes/notification.js";
@@ -59,6 +60,7 @@ export function createApp(
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller, db));
   app.route("/api", createBackupRoutes(db, env));
+  app.route("/api", createDiagnosticsRoutes(db, env, hsdManager));
   app.route("/api", createWalletRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNameRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNotificationRoutes(db));
