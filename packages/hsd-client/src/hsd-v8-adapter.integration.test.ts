@@ -235,6 +235,216 @@ describe.skipIf(!available)("HsdV8Adapter against a live regtest hsd", () => {
     }
   });
 
+  describe("Phase 4: name management writes", () => {
+    async function walletFetch(
+      walletId: string,
+      path: string,
+      body: unknown,
+    ): Promise<{ hash?: string; error?: { message: string } }> {
+      const res = await fetch(`${WALLET_URL}/wallet/${walletId}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      return res.json() as Promise<{ hash?: string; error?: { message: string } }>;
+    }
+
+    async function retry<T>(
+      addr: string,
+      fn: () => Promise<T>,
+      tries: number,
+      mineEach = 2,
+    ): Promise<T> {
+      let lastError: unknown;
+      for (let i = 0; i < tries; i++) {
+        try {
+          return await fn();
+        } catch (error) {
+          lastError = error;
+          await mineTo(addr, mineEach);
+        }
+      }
+      throw lastError;
+    }
+
+    /** Runs a name through OPEN -> BID -> REVEAL -> REGISTER on a dedicated wallet, using the raw HTTP API directly (not the adapter under test) so these tests exercise real hsd state. */
+    async function registerFreshName(walletId: string, addr: string): Promise<string> {
+      const name = `alicep4${randomUUID().slice(0, 8)}`;
+
+      await retry(
+        addr,
+        async () => {
+          const res = await walletFetch(walletId, "/open", { name });
+          if (!res.hash) throw new Error(`open failed: ${res.error?.message}`);
+        },
+        5,
+        3,
+      );
+      await mineTo(addr, 8);
+
+      await retry(
+        addr,
+        async () => {
+          const res = await walletFetch(walletId, "/bid", { name, bid: 500_000, lockup: 600_000 });
+          if (!res.hash) throw new Error(`bid failed: ${res.error?.message}`);
+        },
+        8,
+        3,
+      );
+      await mineTo(addr, 8);
+
+      await retry(
+        addr,
+        async () => {
+          const res = await walletFetch(walletId, "/reveal", { name });
+          if (!res.hash) throw new Error(`reveal failed: ${res.error?.message}`);
+        },
+        8,
+        3,
+      );
+      await mineTo(addr, 8);
+
+      await retry(
+        addr,
+        async () => {
+          const res = await walletFetch(walletId, "/update", {
+            name,
+            data: { records: [{ type: "TXT", txt: ["initial"] }] },
+          });
+          if (!res.hash) throw new Error(`initial register failed: ${res.error?.message}`);
+        },
+        8,
+        3,
+      );
+      await mineTo(addr, 3);
+
+      return name;
+    }
+
+    async function freshWallet(): Promise<{
+      walletId: string;
+      client: HsdV8Adapter;
+      addr: string;
+    }> {
+      const walletId = `p4-${randomUUID().slice(0, 8)}`;
+      await fetch(`${WALLET_URL}/wallet/${walletId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const client = adapter(walletId);
+      const addr = (await client.getReceiveAddress()).address;
+      await mineTo(addr, 20);
+      return { walletId, client, addr };
+    }
+
+    it("previews and executes an UPDATE, reading the new resource back", async () => {
+      const { client, addr, walletId } = await freshWallet();
+      const name = await registerFreshName(walletId, addr);
+
+      const detail = await client.getName(name);
+      expect(detail.resource?.records).toEqual([{ type: "TXT", text: ["initial"] }]);
+
+      const newRecords = [{ type: "TXT" as const, text: ["updated"] }];
+      const preview = await client.previewUpdateName({ name, records: newRecords });
+      expect(preview.fee).toBeGreaterThan(0n);
+      expect(preview.resource.records).toEqual(newRecords);
+      expect(preview.resource.size).toBe(preview.resource.raw.length / 2);
+
+      const result = await client.updateName({ name, records: newRecords });
+      expect(result.txid).toMatch(/^[0-9a-f]{64}$/);
+      expect(result.fee).toBe(preview.fee);
+
+      await mineTo(addr, 2);
+      const updated = await client.getName(name);
+      expect(updated.resource?.records).toEqual(newRecords);
+    }, 30_000);
+
+    it("previews and executes a RENEWAL, advancing the renewal height", async () => {
+      const { client, addr, walletId } = await freshWallet();
+      const name = await registerFreshName(walletId, addr);
+
+      const before = await client.getName(name);
+
+      // regtest's renewalMaturity is 50 blocks — hsd rejects "renew yet" before that passes.
+      const preview = await retry(addr, () => client.previewRenewName(name), 10, 8);
+      expect(preview.fee).toBeGreaterThan(0n);
+
+      const result = await client.renewName(name);
+      expect(result.txid).toMatch(/^[0-9a-f]{64}$/);
+
+      await mineTo(addr, 2);
+      const after = await client.getName(name);
+      expect(after.renewalHeight).toBeGreaterThan(before.renewalHeight);
+    }, 30_000);
+
+    it("runs TRANSFER through the lockup period and FINALIZE, confirming the new owner", async () => {
+      const { client, addr, walletId } = await freshWallet();
+      const name = await registerFreshName(walletId, addr);
+      const destination = await client.getReceiveAddress();
+
+      const transferPreview = await client.previewTransferName({
+        name,
+        address: destination.address,
+      });
+      expect(transferPreview.fee).toBeGreaterThan(0n);
+
+      const transferResult = await client.transferName({ name, address: destination.address });
+      expect(transferResult.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 2);
+
+      const midTransfer = await client.getName(name);
+      expect(midTransfer.transferState).not.toBe("none");
+
+      // Lockup is short in regtest but non-zero; mine well past it before finalizing.
+      await mineTo(addr, 15);
+
+      const finalizePreview = await client.previewFinalizeName(name);
+      expect(finalizePreview.fee).toBeGreaterThan(0n);
+
+      const finalizeResult = await client.finalizeName(name);
+      expect(finalizeResult.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 2);
+
+      const finalized = await client.getName(name);
+      expect(finalized.transferState).toBe("none");
+      expect(finalized.owned).toBe(true);
+      expect(finalized.ownerAddress).toBe(destination.address);
+    }, 30_000);
+
+    it("revokes a name irreversibly", async () => {
+      const { client, addr, walletId } = await freshWallet();
+      const name = await registerFreshName(walletId, addr);
+
+      const result = await client.revokeName(name);
+      expect(result.txid).toMatch(/^[0-9a-f]{64}$/);
+
+      await mineTo(addr, 2);
+      const revoked = await client.getName(name);
+      expect(revoked.state).toBe("revoked");
+    }, 30_000);
+
+    it("renewNames processes each name independently, isolating a hsd-level failure", async () => {
+      const { client, addr, walletId } = await freshWallet();
+      const goodName = await registerFreshName(walletId, addr);
+      await mineTo(addr, 55); // clear regtest's 50-block renewalMaturity
+
+      const results = await client.renewNames([goodName, "totally-unregistered-name"]);
+      expect(results).toHaveLength(2);
+      expect(results[0]).toMatchObject({ name: goodName, status: "success" });
+      expect(results[1]).toMatchObject({ name: "totally-unregistered-name", status: "failed" });
+      expect(results[1]?.reason).toBeTruthy();
+    }, 30_000);
+  });
+
+  // Must run last — hsd's wallet gets confused building new transactions while a background
+  // rescan it triggered is still catching up (see the Phase 3 name-lifecycle test above).
   it("rescans without touching chain height", async () => {
     const before = await adapter().getStatus();
     await adapter().rescan(0);

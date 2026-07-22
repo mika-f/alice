@@ -1,3 +1,4 @@
+import type { DnsRecord } from "@alice-hns-wallet/domain";
 import { describe, expect, it } from "vitest";
 import {
   hasOwner,
@@ -5,9 +6,17 @@ import {
   toNameResource,
   toNameState,
   toOwnedName,
+  toResourceData,
   toTransferState,
+  toUpdatePreviewResult,
 } from "./name-mapper.js";
-import type { RawAuction, RawName, RawNameOwner, RawNameResource } from "./raw-schemas.js";
+import type {
+  RawAuction,
+  RawCovenantPreview,
+  RawName,
+  RawNameOwner,
+  RawNameResource,
+} from "./raw-schemas.js";
 
 const NO_OWNER: RawNameOwner = {
   hash: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -205,5 +214,70 @@ describe("toNameDetails", () => {
       { owned: false, ownerAddress: null },
     );
     expect(details.bids).toEqual([{ value: null, lockup: 2_100_000n, height: 5, own: false }]);
+  });
+});
+
+describe("toResourceData", () => {
+  it("encodes known record types back into hsd's JSON shape", () => {
+    const records: DnsRecord[] = [
+      { type: "NS", ns: "ns1.example.com." },
+      { type: "GLUE4", ns: "ns1.example.com.", address: "1.2.3.4" },
+      { type: "TXT", text: ["hello", "world"] },
+      { type: "DS", keyTag: 1, algorithm: 8, digestType: 2, digest: "aabb" },
+    ];
+    expect(toResourceData(records)).toEqual({
+      records: [
+        { type: "NS", ns: "ns1.example.com." },
+        { type: "GLUE4", ns: "ns1.example.com.", address: "1.2.3.4" },
+        { type: "TXT", txt: ["hello", "world"] },
+        { type: "DS", keyTag: 1, algorithm: 8, digestType: 2, digest: "aabb" },
+      ],
+    });
+  });
+
+  it("round-trips an UNKNOWN record through its stored raw JSON unchanged", () => {
+    const original = { type: "TLS", something: "unrecognized" };
+    const records: DnsRecord[] = [{ type: "UNKNOWN", raw: JSON.stringify(original) }];
+    expect(toResourceData(records)).toEqual({ records: [original] });
+  });
+});
+
+describe("toUpdatePreviewResult", () => {
+  function baseCovenantPreview(overrides: Partial<RawCovenantPreview>): RawCovenantPreview {
+    return {
+      hash: "h",
+      fee: 5000,
+      rate: 20000,
+      outputs: [
+        {
+          value: 0,
+          address: "rs1qowner",
+          covenant: {
+            type: 7,
+            action: "UPDATE",
+            items: ["namehash", "height", "0006010568656c6c6f"],
+          },
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("extracts the raw resource hex and size from the UPDATE covenant output", () => {
+    const records: DnsRecord[] = [{ type: "TXT", text: ["hello"] }];
+    const result = toUpdatePreviewResult(baseCovenantPreview({}), records);
+    expect(result.fee).toBe(5000n);
+    expect(result.resource).toEqual({
+      records,
+      raw: "0006010568656c6c6f",
+      size: "0006010568656c6c6f".length / 2,
+    });
+  });
+
+  it("throws if hsd's response has no UPDATE output", () => {
+    const preview = baseCovenantPreview({
+      outputs: [{ value: 0, address: null, covenant: { type: 0, action: "NONE", items: [] } }],
+    });
+    expect(() => toUpdatePreviewResult(preview, [])).toThrow();
   });
 });

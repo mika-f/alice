@@ -155,6 +155,9 @@ function DashboardPage() {
             <Link to="/names" className="button secondary">
               Names
             </Link>
+            <Link to="/notifications" className="button secondary">
+              Notifications
+            </Link>
           </div>
 
           <div className="card">

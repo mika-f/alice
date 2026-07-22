@@ -1,4 +1,7 @@
 import { apiFetch } from "./client.js";
+import type { BroadcastResultResponse } from "./wallet.js";
+
+export type { BroadcastResultResponse } from "./wallet.js";
 
 export interface OwnedNameResponse {
   name: string;
@@ -68,6 +71,85 @@ export function getNameResource(name: string): Promise<NameResourceResponse | nu
 export function setNameMeta(name: string, input: { label?: string; memo?: string }): Promise<void> {
   return apiFetch(`/api/names/${encodeURIComponent(name)}/meta`, {
     method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export interface UpdatePreviewResponse {
+  fee: string;
+  resource: NameResourceResponse;
+}
+
+export function previewUpdateName(
+  name: string,
+  records: DnsRecordResponse[],
+): Promise<UpdatePreviewResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/update/preview`, {
+    method: "POST",
+    body: JSON.stringify({ records }),
+  });
+}
+
+export function updateName(
+  name: string,
+  records: DnsRecordResponse[],
+): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/update`, {
+    method: "POST",
+    body: JSON.stringify({ records }),
+  });
+}
+
+export function previewRenewName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/renew/preview`, { method: "POST" });
+}
+
+export function renewName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/renew`, { method: "POST" });
+}
+
+export interface NameActionResultResponse {
+  name: string;
+  status: "success" | "failed" | "skipped";
+  txid?: string;
+  reason?: string;
+}
+
+export function renewNamesBatch(names: string[]): Promise<NameActionResultResponse[]> {
+  return apiFetch("/api/names/renew-batch", { method: "POST", body: JSON.stringify({ names }) });
+}
+
+export function previewTransferName(
+  name: string,
+  address: string,
+): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/transfer/preview`, {
+    method: "POST",
+    body: JSON.stringify({ address }),
+  });
+}
+
+export function transferName(name: string, address: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/transfer`, {
+    method: "POST",
+    body: JSON.stringify({ address }),
+  });
+}
+
+export function previewFinalizeName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/finalize/preview`, { method: "POST" });
+}
+
+export function finalizeName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/finalize`, { method: "POST" });
+}
+
+export function revokeName(
+  name: string,
+  input: { password: string; code: string },
+): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/revoke`, {
+    method: "POST",
     body: JSON.stringify(input),
   });
 }

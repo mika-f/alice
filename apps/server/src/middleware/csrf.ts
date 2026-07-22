@@ -40,6 +40,14 @@ export function verifyCsrf(env: Env): MiddlewareHandler {
     }
 
     const secFetchSite = c.req.header("sec-fetch-site");
+    console.log(
+      "sec-fetch-site:",
+      secFetchSite,
+      "  origin:",
+      c.req.header("origin"),
+      "  expected:",
+      expectedOrigin,
+    );
     if (secFetchSite && secFetchSite !== "same-origin") {
       return c.json({ error: "Cross-site request rejected" }, 403);
     }

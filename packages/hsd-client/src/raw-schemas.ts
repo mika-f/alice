@@ -198,3 +198,34 @@ export const rawNameResourceSchema = z.object({
 
 export type RawDnsRecord = z.infer<typeof rawDnsRecordSchema>;
 export type RawNameResource = z.infer<typeof rawNameResourceSchema>;
+
+const rawCovenantOutputSchema = z.object({
+  value: z.number().int(),
+  address: z.string().nullable(),
+  covenant: rawCovenantSchema,
+});
+
+/**
+ * `POST /wallet/:id/{update,renewal,transfer,finalize,revoke}` with `broadcast:false` — the full
+ * signed-but-unbroadcast MTX. Used for fee estimation and (for update) reading back the raw
+ * resource bytes hsd would commit, without ever touching the mempool.
+ */
+export const rawCovenantPreviewSchema = z.object({
+  hash: z.string(),
+  fee: z.number().int(),
+  rate: z.number().int(),
+  outputs: z.array(rawCovenantOutputSchema),
+});
+
+export type RawCovenantPreview = z.infer<typeof rawCovenantPreviewSchema>;
+
+/**
+ * Same endpoints with `broadcast:true` (the default). Unlike `/wallet/:id/send`, hsd omits
+ * `fee`/`rate` entirely here — the plain broadcast TX JSON has no embedded coin view to compute
+ * them from — so HsdV8Adapter gets an accurate fee from a preceding `broadcast:false` call instead.
+ */
+export const rawCovenantBroadcastSchema = z.object({
+  hash: z.string(),
+});
+
+export type RawCovenantBroadcast = z.infer<typeof rawCovenantBroadcastSchema>;

@@ -22,6 +22,7 @@ describe("runMigrations", () => {
       "login_attempts",
       "name_cache",
       "name_meta",
+      "notifications",
       "recovery_codes",
       "send_idempotency",
       "sessions",

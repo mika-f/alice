@@ -1,5 +1,17 @@
 import { Semaphore } from "./semaphore.js";
 
+/** hsd's error bodies are `{ error: { message } }`; falls back to the raw body when they aren't. */
+async function extractErrorMessage(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: string } };
+    if (parsed.error?.message) return parsed.error.message;
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return text || response.statusText;
+}
+
 export class HsdHttpError extends Error {
   constructor(
     message: string,
@@ -86,7 +98,10 @@ export class HsdHttpClient {
       });
 
       if (!response.ok) {
-        throw new HsdHttpError(`hsd request failed: ${method} ${path}`, response.status);
+        throw new HsdHttpError(
+          `hsd request failed: ${method} ${path}: ${await extractErrorMessage(response)}`,
+          response.status,
+        );
       }
 
       return (await response.json()) as T;

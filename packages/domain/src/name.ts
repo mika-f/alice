@@ -1,4 +1,4 @@
-import type { NameResource } from "./resource.js";
+import type { DnsRecord, NameResource } from "./resource.js";
 
 export const NAME_STATES = [
   "opening",
@@ -56,6 +56,12 @@ export interface NameDetails extends OwnedName {
 
 export interface UpdateNameRequest {
   name: string;
+  records: DnsRecord[];
+}
+
+/** Result of a dry-run (broadcast:false) update — the real raw bytes/size hsd would commit, without touching the mempool. */
+export interface UpdatePreviewResult {
+  fee: bigint;
   resource: NameResource;
 }
 
@@ -64,9 +70,12 @@ export interface TransferNameRequest {
   address: string;
 }
 
+/** Spec §17.3 batch results: "example1/ Success", "example3/ Failed: Wallet locked", "example4/ Skipped: Renewal not available". */
+export type NameActionStatus = "success" | "failed" | "skipped";
+
 export interface NameActionResult {
   name: string;
-  success: boolean;
+  status: NameActionStatus;
   txid?: string;
   reason?: string;
 }

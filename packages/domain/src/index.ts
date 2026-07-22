@@ -4,5 +4,8 @@ export * from "./wallet.js";
 export * from "./covenant.js";
 export * from "./transaction.js";
 export * from "./resource.js";
+export * from "./resource-validation.js";
 export * from "./name.js";
 export * from "./blocks.js";
+export * from "./renewal.js";
+export * from "./notification.js";

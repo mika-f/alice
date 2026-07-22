@@ -2,9 +2,10 @@ import { estimateDaysRemaining } from "@alice-hns-wallet/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { getName, setNameMeta, type DnsRecordResponse } from "../api/names.js";
-import { formatHns } from "../lib/hns.js";
+import { getName, setNameMeta } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
+import { describeRecord } from "../lib/dns-records.js";
+import { formatHns } from "../lib/hns.js";
 import { rootRoute } from "./root.js";
 
 export const nameDetailRoute = createRoute({
@@ -12,27 +13,6 @@ export const nameDetailRoute = createRoute({
   path: "/names/$name",
   component: NameDetailPage,
 });
-
-function describeRecord(record: DnsRecordResponse): string {
-  switch (record.type) {
-    case "NS":
-      return `NS ${record.ns}`;
-    case "GLUE4":
-      return `GLUE4 ${record.ns} → ${record.address}`;
-    case "GLUE6":
-      return `GLUE6 ${record.ns} → ${record.address}`;
-    case "DS":
-      return `DS keyTag=${record.keyTag} alg=${record.algorithm} digestType=${record.digestType} digest=${record.digest}`;
-    case "TXT":
-      return `TXT ${record.text.join(" ")}`;
-    case "SYNTH4":
-      return `SYNTH4 ${record.address}`;
-    case "SYNTH6":
-      return `SYNTH6 ${record.address}`;
-    case "UNKNOWN":
-      return `Unrecognized record: ${record.raw}`;
-  }
-}
 
 function NameDetailPage() {
   const navigate = useNavigate();
@@ -116,6 +96,33 @@ function NameDetailPage() {
               </button>
             </p>
           </div>
+
+          {detail.owned && (
+            <div className="card">
+              <h1>Actions</h1>
+              <div className="field-row" style={{ flexWrap: "wrap" }}>
+                <Link to="/names/$name/edit" params={{ name }} className="button secondary">
+                  Edit DNS records
+                </Link>
+                <Link to="/names/$name/renew" params={{ name }} className="button secondary">
+                  Renew
+                </Link>
+                {detail.transferState === "none" && (
+                  <Link to="/names/$name/transfer" params={{ name }} className="button secondary">
+                    Transfer
+                  </Link>
+                )}
+                {detail.transferState === "finalizable" && (
+                  <Link to="/names/$name/finalize" params={{ name }} className="button secondary">
+                    Finalize transfer
+                  </Link>
+                )}
+                <Link to="/names/$name/revoke" params={{ name }} className="button danger">
+                  Revoke
+                </Link>
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <h1>DNS resource</h1>

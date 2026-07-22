@@ -1,18 +1,30 @@
+import type { OwnedName } from "@alice-hns-wallet/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDb, type Db } from "../db/client.js";
+import { runMigrations } from "../db/migrate.js";
+import { listNotifications } from "./notification-service.js";
 import { StatusPoller } from "./status-poller.js";
 
-function fakeManager(overrides: Partial<{ status: boolean; walletStatus: boolean }> = {}) {
+function fakeManager(
+  overrides: Partial<{
+    status: boolean;
+    walletStatus: boolean;
+    version: string;
+    synced: boolean;
+  }> = {},
+  names: OwnedName[] = [],
+) {
   const adapter = {
     getStatus: vi.fn(async () => {
       if (overrides.status === false) throw new Error("node unreachable");
       return {
         connected: true,
-        version: "8.0.0",
+        version: overrides.version ?? "8.0.0",
         network: "regtest",
         chainHeight: 100,
         peerCount: 3,
-        synced: true,
-        progress: 1,
+        synced: overrides.synced ?? true,
+        progress: overrides.synced === false ? 0.5 : 1,
       };
     }),
     getWalletStatus: vi.fn(async () => {
@@ -26,9 +38,25 @@ function fakeManager(overrides: Partial<{ status: boolean; walletStatus: boolean
         rescanning: false,
       };
     }),
+    getNames: vi.fn(async () => names),
   };
   const manager = { get: () => adapter } as never;
   return { manager, adapter };
+}
+
+function ownedName(overrides: Partial<OwnedName> = {}): OwnedName {
+  return {
+    name: "example",
+    state: "owned",
+    owned: true,
+    renewalHeight: 100,
+    expirationHeight: 5100,
+    blocksRemaining: 5000,
+    transferState: "none",
+    resourceSummary: null,
+    updatedAt: Date.now(),
+    ...overrides,
+  };
 }
 
 describe("StatusPoller", () => {
@@ -69,7 +97,7 @@ describe("StatusPoller", () => {
     it("polls immediately on start and again after the interval", async () => {
       vi.useFakeTimers();
       const { manager, adapter } = fakeManager();
-      const poller = new StatusPoller(manager, 1_000);
+      const poller = new StatusPoller(manager, null, 1_000);
 
       poller.start();
       await vi.advanceTimersByTimeAsync(0);
@@ -86,7 +114,7 @@ describe("StatusPoller", () => {
     it("stop() prevents further polling", async () => {
       vi.useFakeTimers();
       const { manager, adapter } = fakeManager();
-      const poller = new StatusPoller(manager, 1_000);
+      const poller = new StatusPoller(manager, null, 1_000);
 
       poller.start();
       await vi.advanceTimersByTimeAsync(0);
@@ -95,6 +123,114 @@ describe("StatusPoller", () => {
       const callsAfterStop = adapter.getStatus.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
       expect(adapter.getStatus.mock.calls.length).toBe(callsAfterStop);
+    });
+  });
+
+  describe("notifications (spec §20.1)", () => {
+    let db: Db;
+
+    function freshDb(): Db {
+      const created = createDb(":memory:");
+      runMigrations(created);
+      return created;
+    }
+
+    it("does nothing when constructed without a db", async () => {
+      const { manager } = fakeManager({ status: false });
+      const poller = new StatusPoller(manager);
+      await poller.refresh();
+      // no assertion needed beyond "didn't throw" — there's no db to have written to
+    });
+
+    it("creates a node-disconnected notification once, not on every tick", async () => {
+      db = freshDb();
+      const { manager } = fakeManager({ status: false });
+      const poller = new StatusPoller(manager, db);
+
+      await poller.refresh();
+      await poller.refresh();
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.filter((n) => n.type === "node-disconnected")).toHaveLength(1);
+    });
+
+    it("clears the tracked problem once it resolves, allowing a fresh notification later", async () => {
+      db = freshDb();
+      const down = fakeManager({ status: false });
+      const pollerDown = new StatusPoller(down.manager, db);
+      await pollerDown.refresh();
+
+      // Same poller instance sees the node recover, then fail again.
+      const up = fakeManager({ status: true });
+      Object.assign(down.adapter, up.adapter);
+      await pollerDown.refresh();
+
+      const failAgain = fakeManager({ status: false });
+      Object.assign(down.adapter, failAgain.adapter);
+      await pollerDown.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.filter((n) => n.type === "node-disconnected")).toHaveLength(2);
+    });
+
+    it("flags an unsupported hsd version", async () => {
+      db = freshDb();
+      const { manager } = fakeManager({ version: "7.0.0" });
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.some((n) => n.type === "hsd-version-unsupported")).toBe(true);
+    });
+
+    it("notifies once a name crosses into the recommended renewal window", async () => {
+      db = freshDb();
+      const { manager } = fakeManager({}, [ownedName({ name: "example", blocksRemaining: 5000 })]);
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+      expect(listNotifications(db)).toHaveLength(0);
+
+      const { manager: manager2 } = fakeManager({}, [
+        ownedName({
+          name: "example",
+          blocksRemaining: 4000,
+          expirationHeight: 100_000,
+          renewalHeight: 0,
+        }),
+      ]);
+      const poller2 = new StatusPoller(manager2, db);
+      // Re-uses the same db but a fresh poller instance has no memory of "example" yet, so this
+      // simulates process restart behavior — the in-memory transition tracking is per-instance.
+      await poller2.refresh();
+
+      const notifications = listNotifications(db);
+      expect(
+        notifications.some((n) => n.type === "renewal-approaching" && n.name === "example"),
+      ).toBe(true);
+    });
+
+    it("notifies on a transfer state change and flags finalize-available", async () => {
+      db = freshDb();
+      const { manager, adapter } = fakeManager({}, [
+        ownedName({ name: "example", transferState: "pending" }),
+      ]);
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+      expect(listNotifications(db)).toHaveLength(0);
+
+      adapter.getNames = vi.fn(async () => [
+        ownedName({ name: "example", transferState: "finalizable" }),
+      ]);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(
+        notifications.some((n) => n.type === "transfer-state-changed" && n.name === "example"),
+      ).toBe(true);
+      expect(
+        notifications.some((n) => n.type === "finalize-available" && n.name === "example"),
+      ).toBe(true);
     });
   });
 });

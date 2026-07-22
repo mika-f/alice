@@ -2,6 +2,7 @@ import {
   isNetwork,
   type BroadcastResult,
   type MnemonicImportInput,
+  type NameActionResult,
   type NameDetails,
   type Network,
   type NodeStatus,
@@ -10,16 +11,28 @@ import {
   type SendRequest,
   type TransactionPage,
   type TransactionQuery,
+  type TransferNameRequest,
+  type UpdateNameRequest,
+  type UpdatePreviewResult,
   type WalletBalance,
   type WalletStatus,
 } from "@alice-hns-wallet/domain";
 import { HsdHttpClient, HsdHttpError } from "./http.js";
-import { hasOwner, toNameDetails, toOwnedName, type OwnershipInfo } from "./name-mapper.js";
+import {
+  hasOwner,
+  toNameDetails,
+  toOwnedName,
+  toResourceData,
+  toUpdatePreviewResult,
+  type OwnershipInfo,
+} from "./name-mapper.js";
 import type { HandshakeNodeClient } from "./node-client.js";
 import type { HandshakeWalletClient } from "./wallet-client.js";
 import {
   rawAuctionSchema,
   rawCoinSchema,
+  rawCovenantBroadcastSchema,
+  rawCovenantPreviewSchema,
   rawNameResourceSchema,
   rawNameSchema,
   rawNodeInfoSchema,
@@ -28,6 +41,7 @@ import {
   rawWalletAddressSchema,
   rawWalletBalanceSchema,
   rawWalletInfoSchema,
+  type RawCovenantPreview,
   type RawNameOwner,
   type RawWalletBalance,
 } from "./raw-schemas.js";
@@ -269,27 +283,111 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     }
   }
 
-  updateName(): ReturnType<HandshakeWalletClient["updateName"]> {
-    throw new Error("not implemented: updateName (Phase 4)");
+  async previewUpdateName(request: UpdateNameRequest): Promise<UpdatePreviewResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/update`, {
+      name: request.name,
+      data: toResourceData(request.records),
+      broadcast: false,
+    });
+    return toUpdatePreviewResult(raw, request.records);
   }
 
-  renewName(): ReturnType<HandshakeWalletClient["renewName"]> {
-    throw new Error("not implemented: renewName (Phase 4)");
+  async updateName(request: UpdateNameRequest): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/update`, {
+      name: request.name,
+      data: toResourceData(request.records),
+    });
   }
 
-  renewNames(): ReturnType<HandshakeWalletClient["renewNames"]> {
-    throw new Error("not implemented: renewNames (Phase 4)");
+  async previewRenewName(name: string): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/renewal`, {
+      name,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
   }
 
-  transferName(): ReturnType<HandshakeWalletClient["transferName"]> {
-    throw new Error("not implemented: transferName (Phase 4)");
+  async renewName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/renewal`, { name });
   }
 
-  finalizeName(): ReturnType<HandshakeWalletClient["finalizeName"]> {
-    throw new Error("not implemented: finalizeName (Phase 4)");
+  /**
+   * Spec §17.3: sequential (never parallel/all-or-nothing) so one failure can't corrupt coin
+   * selection for the rest, with every name's own outcome preserved. Callers are expected to have
+   * already filtered out non-renewable names (see NameService.renewNamesBatch) — anything that
+   * reaches here is attempted and any hsd-level rejection becomes a "failed" result, never thrown.
+   */
+  async renewNames(names: string[]): Promise<NameActionResult[]> {
+    const results: NameActionResult[] = [];
+    for (const name of names) {
+      try {
+        const result = await this.renewName(name);
+        results.push({ name, status: "success", txid: result.txid });
+      } catch (error) {
+        results.push({
+          name,
+          status: "failed",
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return results;
   }
 
-  revokeName(): ReturnType<HandshakeWalletClient["revokeName"]> {
-    throw new Error("not implemented: revokeName (Phase 4)");
+  async previewTransferName(request: TransferNameRequest): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/transfer`, {
+      name: request.name,
+      address: request.address,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async transferName(request: TransferNameRequest): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/transfer`, {
+      name: request.name,
+      address: request.address,
+    });
+  }
+
+  async previewFinalizeName(name: string): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/finalize`, {
+      name,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async finalizeName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/finalize`, { name });
+  }
+
+  async revokeName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/revoke`, { name });
+  }
+
+  private async postCovenantOp(
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<RawCovenantPreview> {
+    return rawCovenantPreviewSchema.parse(await this.wallet.post(path, body));
+  }
+
+  /**
+   * hsd returns null fee/rate on the broadcast (default) response for update/renewal/transfer/
+   * finalize/revoke — unlike `/send` — so a `broadcast:false` preview call is made first purely to
+   * learn the real fee, then the actual broadcast call gets the txid. Spec §12.4/§22.2 still holds:
+   * the broadcast call itself is never retried, only this preview step (which touches no mempool
+   * state) runs before it.
+   */
+  private async broadcastCovenantOp(
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<BroadcastResult> {
+    const preview = await this.postCovenantOp(path, { ...body, broadcast: false });
+    const broadcast = rawCovenantBroadcastSchema.parse(
+      await this.wallet.post(path, { ...body, broadcast: true }),
+    );
+    return { txid: broadcast.hash, fee: BigInt(preview.fee) };
   }
 }

@@ -1,3 +1,4 @@
+import { HsdHttpError } from "@alice-hns-wallet/hsd-client";
 import { Hono } from "hono";
 import type { Db } from "./db/client.js";
 import type { Env } from "./env.js";
@@ -9,6 +10,7 @@ import { createAuthRoutes } from "./routes/auth.js";
 import { createConnectionRoutes } from "./routes/connection.js";
 import { healthRoute } from "./routes/health.js";
 import { createNameRoutes } from "./routes/name.js";
+import { createNotificationRoutes } from "./routes/notification.js";
 import { createReadyRoute } from "./routes/ready.js";
 import { createStatusRoutes } from "./routes/status.js";
 import { createWalletRoutes } from "./routes/wallet.js";
@@ -25,6 +27,21 @@ export function createApp(
 ) {
   const app = new Hono<AppEnv>();
 
+  /**
+   * Without this, any unhandled route error (almost always an hsd rejection — wallet locked,
+   * auction/renewal timing, insufficient funds) falls through to Hono's default error response,
+   * which isn't JSON — so the SPA's error handling can't read a real message out of it and falls
+   * back to a generic "Request failed" (see apps/web/src/api/client.ts). This surfaces hsd's own
+   * message (already captured with the request context by HsdHttpClient) consistently everywhere.
+   */
+  app.onError((err, c) => {
+    if (err instanceof HsdHttpError) {
+      return c.json({ error: err.message }, 400);
+    }
+    console.error(err);
+    return c.json({ error: "Internal server error" }, 500);
+  });
+
   app.use(securityHeaders);
   app.use(requireHttps(env));
 
@@ -38,7 +55,8 @@ export function createApp(
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller));
   app.route("/api", createWalletRoutes(db, env, hsdManager));
-  app.route("/api", createNameRoutes(db, hsdManager));
+  app.route("/api", createNameRoutes(db, env, hsdManager));
+  app.route("/api", createNotificationRoutes(db));
 
   mountStaticWeb(app);
 

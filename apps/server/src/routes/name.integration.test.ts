@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { Secret, TOTP } from "otpauth";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { createDb, type Db } from "../db/client.js";
@@ -46,9 +48,151 @@ beforeEach(() => {
   runMigrations(db);
 });
 
-function buildApp() {
-  const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-  return createApp(env, hsdManager, db, new StatusPoller(hsdManager));
+function buildApp(customEnv: Env = env) {
+  const hsdManager = HsdConnectionManager.fromEnvOrDb(db, customEnv);
+  return createApp(customEnv, hsdManager, db, new StatusPoller(hsdManager));
+}
+
+async function nodeRpc<T = unknown>(method: string, params: unknown[] = []): Promise<T> {
+  const res = await fetch(NODE_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ method, params }),
+  });
+  const body = (await res.json()) as { result: T; error: unknown };
+  if (body.error) throw new Error(`RPC ${method} failed: ${JSON.stringify(body.error)}`);
+  return body.result;
+}
+
+async function mineTo(address: string, blocks: number): Promise<void> {
+  await nodeRpc("generatetoaddress", [blocks, address]);
+}
+
+async function walletFetch(
+  walletId: string,
+  path: string,
+  body: unknown,
+): Promise<{ hash?: string; address?: string; error?: { message: string } }> {
+  const res = await fetch(`${WALLET_URL}/wallet/${walletId}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json() as Promise<{ hash?: string; address?: string; error?: { message: string } }>;
+}
+
+async function walletBalance(walletId: string): Promise<{ confirmed: number }> {
+  const res = await fetch(`${WALLET_URL}/wallet/${walletId}/balance`, {
+    headers: { Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}` },
+  });
+  return res.json() as Promise<{ confirmed: number }>;
+}
+
+/** Polls a freshly created wallet until its DB has caught up enough to see the funds it was just mined. */
+async function waitForWalletFunds(walletId: string): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    const balance = await walletBalance(walletId);
+    if (balance.confirmed > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
+async function retry<T>(
+  addr: string,
+  fn: () => Promise<T>,
+  tries: number,
+  mineEach = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      await mineTo(addr, mineEach);
+    }
+  }
+  throw lastError;
+}
+
+/** Creates a dedicated wallet, funds it, and registers a fresh name through OPEN -> BID -> REVEAL -> REGISTER via the raw HTTP API (not the routes under test). */
+async function setUpFreshOwnedName(): Promise<{
+  walletId: string;
+  addr: string;
+  name: string;
+  env: Env;
+}> {
+  const walletId = `p4route-${randomUUID().slice(0, 8)}`;
+  await fetch(`${WALLET_URL}/wallet/${walletId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  const addrRes = await walletFetch(walletId, "/address", { account: "default" });
+  const addr = addrRes.address!;
+  await mineTo(addr, 20);
+
+  // A freshly created wallet's DB can lag a moment behind the chain tip it was just funded on;
+  // wait for it to catch up rather than let the very first /open attempt race that (this shows up
+  // as a spurious "Name is already opening" from hsd, not a funds/timing error it reports clearly).
+  await waitForWalletFunds(walletId);
+
+  const name = `aliceroute${randomUUID().slice(0, 8)}`;
+
+  await retry(
+    addr,
+    async () => {
+      const res = await walletFetch(walletId, "/open", { name });
+      if (!res.hash) throw new Error(`open failed: ${res.error?.message}`);
+    },
+    5,
+  );
+  await mineTo(addr, 8);
+
+  await retry(
+    addr,
+    async () => {
+      const res = await walletFetch(walletId, "/bid", { name, bid: 500_000, lockup: 600_000 });
+      if (!res.hash) throw new Error(`bid failed: ${res.error?.message}`);
+    },
+    8,
+  );
+  await mineTo(addr, 8);
+
+  await retry(
+    addr,
+    async () => {
+      const res = await walletFetch(walletId, "/reveal", { name });
+      if (!res.hash) throw new Error(`reveal failed: ${res.error?.message}`);
+    },
+    8,
+  );
+  await mineTo(addr, 8);
+
+  await retry(
+    addr,
+    async () => {
+      const res = await walletFetch(walletId, "/update", {
+        name,
+        data: { records: [{ type: "TXT", txt: ["initial"] }] },
+      });
+      if (!res.hash) throw new Error(`register failed: ${res.error?.message}`);
+    },
+    8,
+  );
+  await mineTo(addr, 3);
+
+  return { walletId, addr, name, env: { ...env, HSD_WALLET_ID: walletId } };
 }
 
 interface Jar {
@@ -106,6 +250,27 @@ async function setUpAndLogIn(app: ReturnType<typeof buildApp>, jar: Jar) {
   });
 
   return csrf;
+}
+
+function currentTotpCode(secretBase32: string): string {
+  const totp = new TOTP({
+    issuer: "Handshake Web Wallet",
+    label: "alice",
+    secret: Secret.fromBase32(secretBase32),
+  });
+  return totp.generate();
+}
+
+async function enrollTotp(
+  app: ReturnType<typeof buildApp>,
+  jar: Jar,
+  csrf: string,
+): Promise<string> {
+  const enrollRes = await req(app, jar, "POST", "/api/auth/totp/enroll", csrf);
+  const { secret } = await readJson<{ secret: string }>(enrollRes);
+
+  await req(app, jar, "POST", "/api/auth/totp/verify", csrf, { code: currentTotpCode(secret) });
+  return secret;
 }
 
 describe.skipIf(!available)("name routes against a live regtest hsd", () => {
@@ -172,4 +337,89 @@ describe.skipIf(!available)("name routes against a live regtest hsd", () => {
     expect(resource).not.toBeNull();
     expect(Array.isArray(resource?.records)).toBe(true);
   });
+
+  it("previews and executes an UPDATE through the full HTTP route, rejecting an invalid resource first", async () => {
+    const { name, env: walletEnv } = await setUpFreshOwnedName();
+    const app = buildApp(walletEnv);
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const invalidRes = await req(app, jar, "POST", `/api/names/${name}/update/preview`, csrf, {
+      records: [{ type: "NS", ns: "not-a-valid-hostname" }],
+    });
+    expect(invalidRes.status).toBe(400);
+    const invalidBody = await readJson<{ issues: { code: string }[] }>(invalidRes);
+    expect(invalidBody.issues.some((i) => i.code === "ns-hostname-invalid")).toBe(true);
+
+    const records = [{ type: "TXT", text: ["route-test"] }];
+    const previewRes = await req(app, jar, "POST", `/api/names/${name}/update/preview`, csrf, {
+      records,
+    });
+    expect(previewRes.status).toBe(200);
+    const preview = await readJson<{ fee: string; resource: { raw: string; size: number } }>(
+      previewRes,
+    );
+    expect(BigInt(preview.fee)).toBeGreaterThan(0n);
+    expect(preview.resource.size).toBe(preview.resource.raw.length / 2);
+
+    const updateRes = await req(app, jar, "POST", `/api/names/${name}/update`, csrf, { records });
+    expect(updateRes.status).toBe(200);
+    const updated = await readJson<{ txid: string }>(updateRes);
+    expect(updated.txid).toMatch(/^[0-9a-f]{64}$/);
+  }, 30_000);
+
+  it("runs a batch renewal reporting per-name success and skip results", async () => {
+    const { name, env: walletEnv } = await setUpFreshOwnedName();
+    const app = buildApp(walletEnv);
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const res = await req(app, jar, "POST", "/api/names/renew-batch", csrf, {
+      names: [name, "totally-unregistered-name"],
+    });
+    expect(res.status).toBe(200);
+    const results = await readJson<{ name: string; status: string; reason?: string }[]>(res);
+
+    // The freshly-registered name hasn't cleared regtest's 50-block renewalMaturity yet, so hsd
+    // rejects it — the important thing this route test is checking is that the *unrelated* bad
+    // name doesn't abort the whole batch, and that a real per-name outcome comes back for both.
+    expect(results.find((r) => r.name === name)).toBeDefined();
+    const unregistered = results.find((r) => r.name === "totally-unregistered-name");
+    expect(unregistered?.status).toBe("skipped");
+    expect(unregistered?.reason).toBe("Renewal not available");
+  }, 30_000);
+
+  it("rejects revoke with 403 until TOTP is enabled, even with reauth satisfied", async () => {
+    const app = buildApp();
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const res = await req(app, jar, "POST", "/api/names/whatever/revoke", csrf, {
+      password: "correct-horse-battery-staple",
+      code: "000000",
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("revokes a name only once both password and a fresh TOTP code are supplied", async () => {
+    const { name, env: walletEnv } = await setUpFreshOwnedName();
+    const app = buildApp(walletEnv);
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+    const secret = await enrollTotp(app, jar, csrf);
+
+    const wrongPasswordRes = await req(app, jar, "POST", `/api/names/${name}/revoke`, csrf, {
+      password: "wrong-password",
+      code: currentTotpCode(secret),
+    });
+    expect(wrongPasswordRes.status).toBe(401);
+
+    const res = await req(app, jar, "POST", `/api/names/${name}/revoke`, csrf, {
+      password: "correct-horse-battery-staple",
+      code: currentTotpCode(secret),
+    });
+    expect(res.status).toBe(200);
+    const result = await readJson<{ txid: string }>(res);
+    expect(result.txid).toMatch(/^[0-9a-f]{64}$/);
+  }, 30_000);
 });

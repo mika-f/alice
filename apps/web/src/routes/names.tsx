@@ -1,8 +1,19 @@
-import { estimateDaysRemaining } from "@alice-hns-wallet/domain";
-import { useQuery } from "@tanstack/react-query";
+import {
+  classifyRenewal,
+  estimateDaysRemaining,
+  type RenewableName,
+} from "@alice-hns-wallet/domain";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { listNames, type OwnedNameResponse } from "../api/names.js";
+import { reauth } from "../api/auth.js";
+import { ApiError } from "../api/client.js";
+import {
+  listNames,
+  renewNamesBatch,
+  type NameActionResultResponse,
+  type OwnedNameResponse,
+} from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
 import { rootRoute } from "./root.js";
 
@@ -49,12 +60,18 @@ const SORT_LABELS: Record<Sort, string> = {
 
 const AUCTION_STATES = new Set(["opening", "bidding", "revealing", "closed"]);
 
-/** Recommend renewal once less than 10% of the renewal window remains — no fixed threshold is set until Phase 4's configurable notifications (spec §17.4). */
-function isRenewalRecommended(item: OwnedNameResponse): boolean {
-  if (item.state !== "owned") return false;
-  const total = item.expirationHeight - item.renewalHeight;
-  if (total <= 0) return false;
-  return item.blocksRemaining / total < 0.1;
+function toRenewableName(item: OwnedNameResponse): RenewableName {
+  return {
+    state: item.state as RenewableName["state"],
+    transferState: item.transferState as RenewableName["transferState"],
+    blocksRemaining: item.blocksRemaining,
+    renewalHeight: item.renewalHeight,
+    expirationHeight: item.expirationHeight,
+  };
+}
+
+function isRenewable(item: OwnedNameResponse): boolean {
+  return classifyRenewal(toRenewableName(item)) !== "not-renewable";
 }
 
 function matchesFilter(item: OwnedNameResponse, filter: Filter): boolean {
@@ -63,8 +80,10 @@ function matchesFilter(item: OwnedNameResponse, filter: Filter): boolean {
       return true;
     case "owned":
       return item.owned;
-    case "renewal-recommended":
-      return isRenewalRecommended(item);
+    case "renewal-recommended": {
+      const category = classifyRenewal(toRenewableName(item));
+      return category === "recommended" || category === "imminent";
+    }
     case "transferring":
       return item.transferState === "pending";
     case "finalizable":
@@ -112,9 +131,16 @@ function formatRemaining(blocks: number): string {
 function NamesPage() {
   const navigate = useNavigate();
   const session = useSession();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("name");
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchResults, setBatchResults] = useState<NameActionResultResponse[] | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState("");
+  const [pendingBatch, setPendingBatch] = useState<string[]>([]);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   const namesQuery = useQuery({
     queryKey: ["names"],
@@ -135,6 +161,53 @@ function NamesPage() {
       .filter((item) => matchesSearch(item, query))
       .sort((a, b) => compareBySort(a, b, sort));
   }, [namesQuery.data, filter, sort, query]);
+
+  const renewableNames = useMemo(
+    () => (namesQuery.data ?? []).filter(isRenewable).map((n) => n.name),
+    [namesQuery.data],
+  );
+
+  const batchMutation = useMutation({
+    mutationFn: (names: string[]) => renewNamesBatch(names),
+    onSuccess: (results) => {
+      setBatchResults(results);
+      setNeedsReauth(false);
+      setBatchError(null);
+      setSelected(new Set());
+      queryClient.invalidateQueries({ queryKey: ["names"] });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 403) {
+        setNeedsReauth(true);
+      } else if (err instanceof ApiError) {
+        setBatchError(err.message);
+      }
+    },
+  });
+
+  const reauthMutation = useMutation({
+    mutationFn: () => reauth({ method: "password", password: reauthPassword }),
+    onSuccess: () => {
+      setNeedsReauth(false);
+      setReauthPassword("");
+      batchMutation.mutate(pendingBatch);
+    },
+  });
+
+  function startBatch(names: string[]) {
+    setPendingBatch(names);
+    setBatchResults(null);
+    batchMutation.mutate(names);
+  }
+
+  function toggleSelected(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
 
   return (
     <main className="dashboard">
@@ -183,9 +256,82 @@ function NamesPage() {
         <p className="muted">No names known to this wallet yet.</p>
       )}
 
+      {needsReauth && (
+        <div className="card">
+          <h1>Confirm your password</h1>
+          <p className="muted">Batch renewal requires re-authentication.</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              reauthMutation.mutate();
+            }}
+          >
+            <div className="field">
+              <label htmlFor="batch-reauth-password">Password</label>
+              <input
+                id="batch-reauth-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={reauthPassword}
+                onChange={(e) => setReauthPassword(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="button" disabled={reauthMutation.isPending}>
+              Confirm and renew
+            </button>
+          </form>
+        </div>
+      )}
+
+      {batchError && <div className="error-banner">{batchError}</div>}
+
+      {batchResults && (
+        <div className="card">
+          <h1>Renewal results</h1>
+          <ul>
+            {batchResults.map((r) => (
+              <li key={r.name}>
+                {r.name}/{" "}
+                {r.status === "success"
+                  ? "Success"
+                  : `${r.status === "failed" ? "Failed" : "Skipped"}: ${r.reason ?? ""}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="field-row" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className="button secondary"
+          disabled={selected.size === 0 || batchMutation.isPending}
+          onClick={() => startBatch(Array.from(selected))}
+        >
+          Renew selected ({selected.size})
+        </button>
+        <button
+          type="button"
+          className="button secondary"
+          disabled={renewableNames.length === 0 || batchMutation.isPending}
+          onClick={() => startBatch(renewableNames)}
+        >
+          Renew all renewable ({renewableNames.length})
+        </button>
+      </div>
+
       <ul>
         {visible.map((item) => (
           <li key={item.name}>
+            {isRenewable(item) && (
+              <input
+                type="checkbox"
+                checked={selected.has(item.name)}
+                onChange={() => toggleSelected(item.name)}
+                aria-label={`Select ${item.name} for batch renewal`}
+              />
+            )}{" "}
             <Link to="/names/$name" params={{ name: item.name }}>
               <strong>{item.name}</strong>
             </Link>{" "}

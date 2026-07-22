@@ -5,9 +5,11 @@ import type {
   NameState,
   OwnedName,
   TransferState,
+  UpdatePreviewResult,
 } from "@alice-hns-wallet/domain";
 import type {
   RawAuction,
+  RawCovenantPreview,
   RawDnsRecord,
   RawName,
   RawNameOwner,
@@ -132,6 +134,61 @@ export function toOwnedName(raw: RawName): OwnedName {
     transferState: toTransferState(raw),
     resourceSummary: raw.data.length > 0 ? `${raw.data.length / 2} bytes` : null,
     updatedAt: Date.now(),
+  };
+}
+
+/** Reverses toDnsRecord — hsd decodes/encodes DNS records via plain JSON, so no wire-format work happens here. */
+function fromDnsRecord(record: DnsRecord): Record<string, unknown> {
+  switch (record.type) {
+    case "NS":
+      return { type: "NS", ns: record.ns };
+    case "GLUE4":
+      return { type: "GLUE4", ns: record.ns, address: record.address };
+    case "GLUE6":
+      return { type: "GLUE6", ns: record.ns, address: record.address };
+    case "SYNTH4":
+      return { type: "SYNTH4", address: record.address };
+    case "SYNTH6":
+      return { type: "SYNTH6", address: record.address };
+    case "DS":
+      return {
+        type: "DS",
+        keyTag: record.keyTag,
+        algorithm: record.algorithm,
+        digestType: record.digestType,
+        digest: record.digest,
+      };
+    case "TXT":
+      return { type: "TXT", txt: record.text };
+    case "UNKNOWN":
+      // `raw` was produced by JSON.stringify()-ing hsd's own decoded record — round-trips as-is,
+      // so records this app can't structurally edit are preserved untouched on update.
+      return JSON.parse(record.raw) as Record<string, unknown>;
+  }
+}
+
+/** Builds the `data` payload hsd's `/wallet/:id/update` expects. */
+export function toResourceData(records: DnsRecord[]): { records: Record<string, unknown>[] } {
+  return { records: records.map(fromDnsRecord) };
+}
+
+function extractUpdateResourceHex(preview: RawCovenantPreview): string {
+  const output = preview.outputs.find((o) => o.covenant.action === "UPDATE");
+  if (!output) throw new Error("hsd's UPDATE preview response had no UPDATE output");
+  const hex = output.covenant.items[2];
+  if (hex === undefined) throw new Error("hsd's UPDATE covenant is missing the resource data item");
+  return hex;
+}
+
+/** `records` is the caller's own submitted resource — hsd's preview only needs to confirm the raw bytes/fee. */
+export function toUpdatePreviewResult(
+  preview: RawCovenantPreview,
+  records: DnsRecord[],
+): UpdatePreviewResult {
+  const raw = extractUpdateResourceHex(preview);
+  return {
+    fee: BigInt(preview.fee),
+    resource: { records, raw, size: raw.length / 2 },
   };
 }
 

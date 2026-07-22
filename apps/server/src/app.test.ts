@@ -1,3 +1,4 @@
+import { HsdHttpError } from "@alice-hns-wallet/hsd-client";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app.js";
 import { createDb } from "./db/client.js";
@@ -128,5 +129,90 @@ describe("HTTPS enforcement (spec §5.2)", () => {
       headers: { "x-forwarded-proto": "https" },
     });
     expect(accepted.status).toBe(200);
+  });
+});
+
+describe("global error handling", () => {
+  interface Jar {
+    header(): string;
+    absorb(res: Response): void;
+  }
+
+  function cookieJar(): Jar {
+    const cookies = new Map<string, string>();
+    return {
+      header() {
+        return Array.from(cookies.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join("; ");
+      },
+      absorb(res: Response) {
+        for (const setCookie of res.headers.getSetCookie?.() ?? []) {
+          const [pair] = setCookie.split(";");
+          const [name, value] = pair!.split("=");
+          if (name && value !== undefined) cookies.set(name, value);
+        }
+      },
+    };
+  }
+
+  async function setUpAndLogIn(app: ReturnType<typeof createApp>, jar: Jar) {
+    const first = await app.request("/api/auth/session", { headers: { cookie: jar.header() } });
+    jar.absorb(first);
+    const csrf = jar.header().match(/csrf_token=([^;]+)/)![1]!;
+
+    const res = await app.request("/api/auth/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: jar.header(), "x-csrf-token": csrf },
+      body: JSON.stringify({ username: "alice", password: "correct-horse-battery-staple" }),
+    });
+    jar.absorb(res);
+  }
+
+  it("turns an uncaught HsdHttpError into a real JSON error message instead of Hono's default response", async () => {
+    const hsdManager = {
+      get: () => ({
+        getBalance: vi.fn(async () => {
+          throw new HsdHttpError(
+            "hsd request failed: GET /wallet/primary/balance: Not found.",
+            404,
+          );
+        }),
+      }),
+      getConnection: vi.fn(),
+      reconfigure: vi.fn(),
+    } as never;
+
+    const app = createApp(env, hsdManager, freshDb(), fakeStatusPoller());
+    const jar = cookieJar();
+    await setUpAndLogIn(app, jar);
+
+    const res = await app.request("/api/wallet/balance", { headers: { cookie: jar.header() } });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "hsd request failed: GET /wallet/primary/balance: Not found.",
+    });
+  });
+
+  it("hides an unexpected non-hsd error behind a generic message", async () => {
+    const hsdManager = {
+      get: () => ({
+        getBalance: vi.fn(async () => {
+          throw new Error("some internal bug with a stack trace nobody outside should see");
+        }),
+      }),
+      getConnection: vi.fn(),
+      reconfigure: vi.fn(),
+    } as never;
+
+    const app = createApp(env, hsdManager, freshDb(), fakeStatusPoller());
+    const jar = cookieJar();
+    await setUpAndLogIn(app, jar);
+
+    const res = await app.request("/api/wallet/balance", { headers: { cookie: jar.header() } });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Internal server error" });
   });
 });

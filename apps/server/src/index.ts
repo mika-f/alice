@@ -11,7 +11,7 @@ const db = createDb(env.DATABASE_URL);
 runMigrations(db);
 
 const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-const statusPoller = new StatusPoller(hsdManager);
+const statusPoller = new StatusPoller(hsdManager, db);
 statusPoller.start();
 
 const app = createApp(env, hsdManager, db, statusPoller);
