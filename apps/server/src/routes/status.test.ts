@@ -26,7 +26,7 @@ function buildApp(snapshot: StatusSnapshot, authenticated: boolean) {
 describe("GET /api/status", () => {
   it("requires authentication", async () => {
     const app = buildApp(
-      { node: null, nodeError: null, walletConnected: false, walletError: null, lastUpdated: 0 },
+      { node: null, nodeError: null, wallet: null, walletError: null, lastUpdated: 0 },
       false,
     );
     const res = await app.request("/api/status");
@@ -46,7 +46,14 @@ describe("GET /api/status", () => {
           progress: 1,
         },
         nodeError: null,
-        walletConnected: true,
+        wallet: {
+          connected: true,
+          walletId: "primary",
+          network: "regtest",
+          walletHeight: 42,
+          locked: true,
+          rescanning: false,
+        },
         walletError: null,
         lastUpdated: 123,
       },
@@ -64,7 +71,7 @@ describe("GET /api/status", () => {
         synced: true,
         progress: 1,
       },
-      wallet: { connected: true },
+      wallet: { connected: true, walletHeight: 42, locked: true, rescanning: false },
       lastUpdated: 123,
     });
   });
@@ -74,7 +81,7 @@ describe("GET /api/status", () => {
       {
         node: null,
         nodeError: "unreachable",
-        walletConnected: false,
+        wallet: null,
         walletError: null,
         lastUpdated: 0,
       },
@@ -92,7 +99,7 @@ describe("GET /api/status", () => {
         synced: false,
         progress: 0,
       },
-      wallet: { connected: false },
+      wallet: { connected: false, walletHeight: null, locked: false, rescanning: false },
       lastUpdated: 0,
     });
   });

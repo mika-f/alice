@@ -15,12 +15,11 @@ export const nodeStatusResponseSchema = z.object({
   progress: z.number().min(0).max(1),
 });
 
-/**
- * Phase 1 only confirms wallet reachability; height/lock state land once
- * HandshakeWalletClient.getWalletStatus is implemented (Phase 2).
- */
 export const walletStatusResponseSchema = z.object({
   connected: z.boolean(),
+  walletHeight: z.number().int().nonnegative().nullable(),
+  locked: z.boolean(),
+  rescanning: z.boolean(),
 });
 
 export const statusResponseSchema = z.object({

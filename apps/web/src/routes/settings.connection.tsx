@@ -98,6 +98,10 @@ function ConnectionSettingsPage() {
         <Link to="/">Back to dashboard</Link>
       </div>
 
+      <p>
+        <Link to="/settings/import-wallet">Restore a wallet from mnemonic</Link>
+      </p>
+
       {saveError && <div className="error-banner">{saveError}</div>}
 
       {needsReauth && (

@@ -1,13 +1,30 @@
 import {
   isNetwork,
+  type BroadcastResult,
+  type MnemonicImportInput,
   type Network,
   type NodeStatus,
+  type ReceiveAddress,
+  type SendRequest,
+  type TransactionPage,
+  type TransactionQuery,
   type WalletBalance,
+  type WalletStatus,
 } from "@alice-hns-wallet/domain";
 import { HsdHttpClient } from "./http.js";
 import type { HandshakeNodeClient } from "./node-client.js";
 import type { HandshakeWalletClient } from "./wallet-client.js";
-import { rawNodeInfoSchema, rawWalletBalanceSchema, type RawWalletBalance } from "./raw-schemas.js";
+import {
+  rawNodeInfoSchema,
+  rawTxPreviewSchema,
+  rawTxSchema,
+  rawWalletAddressSchema,
+  rawWalletBalanceSchema,
+  rawWalletInfoSchema,
+  type RawWalletBalance,
+} from "./raw-schemas.js";
+import { toTransactionRecord } from "./transaction-mapper.js";
+import { z } from "zod";
 
 const MIN_SUPPORTED_MAJOR = 8;
 const MAX_SUPPORTED_MAJOR = 9;
@@ -35,6 +52,13 @@ function toWalletBalance(raw: RawWalletBalance): WalletBalance {
     locked: lockedConfirmed + lockedUnconfirmed,
     spendable: confirmed - lockedConfirmed,
   };
+}
+
+/** encrypted:false means no passphrase was ever set — such a wallet is never locked. */
+function isWalletLocked(master: { encrypted: boolean; until?: number }): boolean {
+  if (!master.encrypted) return false;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return !master.until || master.until <= nowSeconds;
 }
 
 export interface HsdV8AdapterOptions {
@@ -98,28 +122,98 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     return toWalletBalance(raw);
   }
 
-  getWalletStatus(): ReturnType<HandshakeWalletClient["getWalletStatus"]> {
-    throw new Error("not implemented: getWalletStatus (Phase 1)");
+  /**
+   * hsd's wallet HTTP API doesn't expose a distinct "wallet height" or
+   * "rescanning" flag; the wallet DB is kept in lockstep with the chain, so the
+   * node's chain height is used as a close approximation. `rescanning` isn't
+   * observable via this endpoint and is left false here (see WalletService for
+   * the app-level rescan-in-progress flag).
+   */
+  async getWalletStatus(): Promise<WalletStatus> {
+    const [nodeRaw, walletRaw] = await Promise.all([
+      this.node.get("/"),
+      this.wallet.get(`/wallet/${this.walletId}`),
+    ]);
+    const node = rawNodeInfoSchema.parse(nodeRaw);
+    const walletInfo = rawWalletInfoSchema.parse(walletRaw);
+
+    return {
+      connected: true,
+      walletId: this.walletId,
+      network: toNetwork(walletInfo.network),
+      walletHeight: node.chain.height,
+      locked: isWalletLocked(walletInfo.master),
+      rescanning: false,
+    };
   }
 
-  getTransactions(): ReturnType<HandshakeWalletClient["getTransactions"]> {
-    throw new Error("not implemented: getTransactions (Phase 2)");
+  async getReceiveAddress(): Promise<ReceiveAddress> {
+    const raw = rawWalletAddressSchema.parse(
+      await this.wallet.post(`/wallet/${this.walletId}/address`, { account: "default" }),
+    );
+    return { address: raw.address, index: raw.index, used: false };
   }
 
-  getReceiveAddress(): ReturnType<HandshakeWalletClient["getReceiveAddress"]> {
-    throw new Error("not implemented: getReceiveAddress (Phase 2)");
+  async send(request: SendRequest): Promise<BroadcastResult> {
+    const raw = rawTxSchema.parse(
+      await this.wallet.post(`/wallet/${this.walletId}/send`, {
+        outputs: [{ address: request.address, value: Number(request.amount) }],
+        rate: request.feeRate,
+      }),
+    );
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
   }
 
-  send(): ReturnType<HandshakeWalletClient["send"]> {
-    throw new Error("not implemented: send (Phase 2)");
+  /** POST .../create builds without broadcasting — a different response shape than send (see raw-schemas.ts). */
+  async previewSend(request: SendRequest): Promise<BroadcastResult> {
+    const raw = rawTxPreviewSchema.parse(
+      await this.wallet.post(`/wallet/${this.walletId}/create`, {
+        outputs: [{ address: request.address, value: Number(request.amount) }],
+        rate: request.feeRate,
+      }),
+    );
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
   }
 
-  lock(): ReturnType<HandshakeWalletClient["lock"]> {
-    throw new Error("not implemented: lock (Phase 2)");
+  /**
+   * `reverse=true` returns newest-first, which is what a wallet history view expects;
+   * "after" continues in that same order. hsd rejects any limit above 100.
+   */
+  async getTransactions(query: TransactionQuery): Promise<TransactionPage> {
+    const limit = Math.min(query.limit ?? 50, 100);
+    const params = new URLSearchParams({ limit: String(limit), reverse: "true" });
+    if (query.cursor) params.set("after", query.cursor);
+
+    const raw = z
+      .array(rawTxSchema)
+      .parse(await this.wallet.get(`/wallet/${this.walletId}/tx/history?${params.toString()}`));
+
+    const items = raw.map(toTransactionRecord);
+    const nextCursor = raw.length === limit ? (raw[raw.length - 1]?.hash ?? null) : null;
+    return { items, nextCursor };
   }
 
-  unlock(): ReturnType<HandshakeWalletClient["unlock"]> {
-    throw new Error("not implemented: unlock (Phase 2)");
+  async lock(): Promise<void> {
+    await this.wallet.post(`/wallet/${this.walletId}/lock`);
+  }
+
+  async unlock(passphrase: string, timeoutSeconds: number): Promise<void> {
+    await this.wallet.post(`/wallet/${this.walletId}/unlock`, {
+      passphrase,
+      timeout: timeoutSeconds,
+    });
+  }
+
+  /** Hits the wallet server's rescan endpoint, not the node's chain `/reset` — that resets the chain itself. */
+  async rescan(height: number): Promise<void> {
+    await this.wallet.post("/rescan", { height });
+  }
+
+  async createWalletFromMnemonic(input: MnemonicImportInput): Promise<void> {
+    await this.wallet.put(`/wallet/${input.walletId}`, {
+      mnemonic: input.mnemonic,
+      passphrase: input.passphrase,
+    });
   }
 
   getNames(): ReturnType<HandshakeWalletClient["getNames"]> {

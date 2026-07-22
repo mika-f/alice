@@ -10,6 +10,7 @@ import { createConnectionRoutes } from "./routes/connection.js";
 import { healthRoute } from "./routes/health.js";
 import { createReadyRoute } from "./routes/ready.js";
 import { createStatusRoutes } from "./routes/status.js";
+import { createWalletRoutes } from "./routes/wallet.js";
 import type { HsdConnectionManager } from "./services/hsd-connection-manager.js";
 import type { StatusPoller } from "./services/status-poller.js";
 import { mountStaticWeb } from "./static.js";
@@ -35,6 +36,7 @@ export function createApp(
   app.route("/api", createAuthRoutes(db, env));
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller));
+  app.route("/api", createWalletRoutes(db, env, hsdManager));
 
   mountStaticWeb(app);
 

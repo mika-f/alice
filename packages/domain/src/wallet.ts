@@ -25,3 +25,9 @@ export interface BroadcastResult {
   txid: string;
   fee: bigint;
 }
+
+export interface MnemonicImportInput {
+  walletId: string;
+  mnemonic: string;
+  passphrase?: string;
+}

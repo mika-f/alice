@@ -16,12 +16,15 @@ describe("runMigrations", () => {
       .sort();
 
     expect(tables).toEqual([
+      "addresses",
       "admin",
       "connections",
       "login_attempts",
       "recovery_codes",
+      "send_idempotency",
       "sessions",
       "settings",
+      "tx_meta",
     ]);
   });
 });

@@ -69,3 +69,33 @@ export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });
+
+/** Every receive address our app has issued, so §11.1's address history/labels don't depend on hsd exposing that. */
+export const addresses = sqliteTable("addresses", {
+  address: text("address").primaryKey(),
+  addressIndex: integer("address_index").notNull(),
+  label: text("label"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** Local-only label/memo for a transaction; never sent to hsd or the chain (spec §12.1). */
+export const txMeta = sqliteTable("tx_meta", {
+  txid: text("txid").primaryKey(),
+  label: text("label"),
+  memo: text("memo"),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** Spec §12.4: replaying the same idempotency key returns the original broadcast instead of sending again. */
+export const sendIdempotency = sqliteTable("send_idempotency", {
+  idempotencyKey: text("idempotency_key").primaryKey(),
+  txid: text("txid").notNull(),
+  fee: text("fee").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});

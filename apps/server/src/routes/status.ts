@@ -19,7 +19,10 @@ export function createStatusRoutes(statusPoller: StatusPoller) {
         progress: snapshot.node?.progress ?? 0,
       },
       wallet: {
-        connected: snapshot.walletConnected,
+        connected: snapshot.wallet !== null,
+        walletHeight: snapshot.wallet?.walletHeight ?? null,
+        locked: snapshot.wallet?.locked ?? false,
+        rescanning: snapshot.wallet?.rescanning ?? false,
       },
       lastUpdated: snapshot.lastUpdated,
     });

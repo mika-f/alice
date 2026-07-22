@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StatusPoller } from "./status-poller.js";
 
-function fakeManager(overrides: Partial<{ status: boolean; balance: boolean }> = {}) {
+function fakeManager(overrides: Partial<{ status: boolean; walletStatus: boolean }> = {}) {
   const adapter = {
     getStatus: vi.fn(async () => {
       if (overrides.status === false) throw new Error("node unreachable");
@@ -15,9 +15,16 @@ function fakeManager(overrides: Partial<{ status: boolean; balance: boolean }> =
         progress: 1,
       };
     }),
-    getBalance: vi.fn(async () => {
-      if (overrides.balance === false) throw new Error("wallet unreachable");
-      return { confirmed: 0n, unconfirmed: 0n, locked: 0n, spendable: 0n };
+    getWalletStatus: vi.fn(async () => {
+      if (overrides.walletStatus === false) throw new Error("wallet unreachable");
+      return {
+        connected: true,
+        walletId: "primary",
+        network: "regtest",
+        walletHeight: 100,
+        locked: false,
+        rescanning: false,
+      };
     }),
   };
   const manager = { get: () => adapter } as never;
@@ -30,7 +37,7 @@ describe("StatusPoller", () => {
     expect(poller.getSnapshot()).toEqual({
       node: null,
       nodeError: null,
-      walletConnected: false,
+      wallet: null,
       walletError: null,
       lastUpdated: 0,
     });
@@ -41,16 +48,16 @@ describe("StatusPoller", () => {
     const snapshot = await poller.refresh();
     expect(snapshot.node?.connected).toBe(true);
     expect(snapshot.node?.chainHeight).toBe(100);
-    expect(snapshot.walletConnected).toBe(true);
+    expect(snapshot.wallet?.locked).toBe(false);
     expect(snapshot.lastUpdated).toBeGreaterThan(0);
   });
 
   it("refresh() records errors without throwing when hsd is unreachable", async () => {
-    const poller = new StatusPoller(fakeManager({ status: false, balance: false }).manager);
+    const poller = new StatusPoller(fakeManager({ status: false, walletStatus: false }).manager);
     const snapshot = await poller.refresh();
     expect(snapshot.node).toBeNull();
     expect(snapshot.nodeError).toContain("node unreachable");
-    expect(snapshot.walletConnected).toBe(false);
+    expect(snapshot.wallet).toBeNull();
     expect(snapshot.walletError).toContain("wallet unreachable");
   });
 

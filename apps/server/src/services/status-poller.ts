@@ -1,10 +1,10 @@
-import type { NodeStatus } from "@alice-hns-wallet/domain";
+import type { NodeStatus, WalletStatus } from "@alice-hns-wallet/domain";
 import type { HsdConnectionManager } from "./hsd-connection-manager.js";
 
 export interface StatusSnapshot {
   node: NodeStatus | null;
   nodeError: string | null;
-  walletConnected: boolean;
+  wallet: WalletStatus | null;
   walletError: string | null;
   lastUpdated: number;
 }
@@ -16,7 +16,7 @@ function errorMessage(error: unknown): string {
 const EMPTY_SNAPSHOT: StatusSnapshot = {
   node: null,
   nodeError: null,
-  walletConnected: false,
+  wallet: null,
   walletError: null,
   lastUpdated: 0,
 };
@@ -62,16 +62,15 @@ export class StatusPoller {
       nodeError = errorMessage(error);
     }
 
-    let walletConnected = false;
+    let wallet: WalletStatus | null = null;
     let walletError: string | null = null;
     try {
-      await hsd.getBalance();
-      walletConnected = true;
+      wallet = await hsd.getWalletStatus();
     } catch (error) {
       walletError = errorMessage(error);
     }
 
-    this.snapshot = { node, nodeError, walletConnected, walletError, lastUpdated: Date.now() };
+    this.snapshot = { node, nodeError, wallet, walletError, lastUpdated: Date.now() };
     return this.snapshot;
   }
 }
