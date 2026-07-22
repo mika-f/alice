@@ -2,8 +2,10 @@ import {
   isNetwork,
   type BroadcastResult,
   type MnemonicImportInput,
+  type NameDetails,
   type Network,
   type NodeStatus,
+  type OwnedName,
   type ReceiveAddress,
   type SendRequest,
   type TransactionPage,
@@ -11,16 +13,22 @@ import {
   type WalletBalance,
   type WalletStatus,
 } from "@alice-hns-wallet/domain";
-import { HsdHttpClient } from "./http.js";
+import { HsdHttpClient, HsdHttpError } from "./http.js";
+import { hasOwner, toNameDetails, toOwnedName, type OwnershipInfo } from "./name-mapper.js";
 import type { HandshakeNodeClient } from "./node-client.js";
 import type { HandshakeWalletClient } from "./wallet-client.js";
 import {
+  rawAuctionSchema,
+  rawCoinSchema,
+  rawNameResourceSchema,
+  rawNameSchema,
   rawNodeInfoSchema,
   rawTxPreviewSchema,
   rawTxSchema,
   rawWalletAddressSchema,
   rawWalletBalanceSchema,
   rawWalletInfoSchema,
+  type RawNameOwner,
   type RawWalletBalance,
 } from "./raw-schemas.js";
 import { toTransactionRecord } from "./transaction-mapper.js";
@@ -216,12 +224,49 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     });
   }
 
-  getNames(): ReturnType<HandshakeWalletClient["getNames"]> {
-    throw new Error("not implemented: getNames (Phase 3)");
+  /** Spec §14.1: the ~100-name list is fetched in a single request; no per-name RPC calls here. */
+  async getNames(): Promise<OwnedName[]> {
+    const raw = z
+      .array(rawNameSchema)
+      .parse(await this.wallet.get(`/wallet/${this.walletId}/name`));
+    return raw.map(toOwnedName);
   }
 
-  getName(): ReturnType<HandshakeWalletClient["getName"]> {
-    throw new Error("not implemented: getName (Phase 3)");
+  async getName(name: string): Promise<NameDetails> {
+    const raw = rawAuctionSchema.parse(
+      await this.wallet.get(`/wallet/${this.walletId}/auction/${encodeURIComponent(name)}`),
+    );
+
+    const resource =
+      raw.data.length > 0
+        ? rawNameResourceSchema.nullable().parse(await this.node.rpc("getnameresource", [name]))
+        : null;
+
+    const ownership = await this.resolveOwnership(raw.owner);
+
+    return toNameDetails(raw, resource, ownership);
+  }
+
+  /**
+   * hsd's wallet name endpoints report the *global* auction outcome, not per-wallet ownership
+   * (a wallet that lost a bid sees the same `owner`/`registered` fields as the winner). The only
+   * reliable way to confirm this wallet actually controls the current owner outpoint is to check
+   * whether that coin is in its own UTXO set.
+   */
+  private async resolveOwnership(owner: RawNameOwner): Promise<OwnershipInfo> {
+    if (!hasOwner(owner)) return { owned: false, ownerAddress: null };
+
+    try {
+      const coin = rawCoinSchema.parse(
+        await this.wallet.get(`/wallet/${this.walletId}/coin/${owner.hash}/${owner.index}`, false),
+      );
+      return { owned: true, ownerAddress: coin.address };
+    } catch (error) {
+      if (error instanceof HsdHttpError && error.status === 404) {
+        return { owned: false, ownerAddress: null };
+      }
+      throw error;
+    }
   }
 
   updateName(): ReturnType<HandshakeWalletClient["updateName"]> {

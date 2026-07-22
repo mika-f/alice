@@ -152,6 +152,9 @@ function DashboardPage() {
             <Link to="/transactions" className="button secondary">
               History
             </Link>
+            <Link to="/names" className="button secondary">
+              Names
+            </Link>
           </div>
 
           <div className="card">

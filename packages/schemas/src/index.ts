@@ -3,3 +3,4 @@ export * from "./status.js";
 export * from "./auth.js";
 export * from "./connection.js";
 export * from "./wallet.js";
+export * from "./name.js";

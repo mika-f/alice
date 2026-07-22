@@ -3,6 +3,8 @@ import { connectionSettingsRoute } from "./routes/settings.connection.js";
 import { dashboardRoute } from "./routes/dashboard.js";
 import { importWalletRoute } from "./routes/settings.import-wallet.js";
 import { loginRoute } from "./routes/login.js";
+import { nameDetailRoute } from "./routes/names.$name.js";
+import { namesRoute } from "./routes/names.js";
 import { receiveRoute } from "./routes/receive.js";
 import { rootRoute } from "./routes/root.js";
 import { sendRoute } from "./routes/send.js";
@@ -18,6 +20,8 @@ const routeTree = rootRoute.addChildren([
   receiveRoute,
   sendRoute,
   transactionsRoute,
+  namesRoute,
+  nameDetailRoute,
 ]);
 
 export const router = createRouter({ routeTree });

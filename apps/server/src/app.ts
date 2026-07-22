@@ -8,6 +8,7 @@ import { attachSession } from "./middleware/session.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createConnectionRoutes } from "./routes/connection.js";
 import { healthRoute } from "./routes/health.js";
+import { createNameRoutes } from "./routes/name.js";
 import { createReadyRoute } from "./routes/ready.js";
 import { createStatusRoutes } from "./routes/status.js";
 import { createWalletRoutes } from "./routes/wallet.js";
@@ -37,6 +38,7 @@ export function createApp(
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller));
   app.route("/api", createWalletRoutes(db, env, hsdManager));
+  app.route("/api", createNameRoutes(db, hsdManager));
 
   mountStaticWeb(app);
 

@@ -99,3 +99,31 @@ export const sendIdempotency = sqliteTable("send_idempotency", {
     .notNull()
     .default(sql`(unixepoch())`),
 });
+
+/** Local-only label/memo for a Name; never sent to hsd or the chain (spec §14.2, §15.3). */
+export const nameMeta = sqliteTable("name_meta", {
+  name: text("name").primaryKey(),
+  label: text("label"),
+  memo: text("memo"),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/**
+ * Snapshot of the last bulk `GET /wallet/:id/name` fetch, purely to speed up first paint of the
+ * Name list — hsd remains the source of truth (spec §14.1, §22.3), this is never written back to.
+ */
+export const nameCache = sqliteTable("name_cache", {
+  name: text("name").primaryKey(),
+  state: text("state").notNull(),
+  owned: integer("owned", { mode: "boolean" }).notNull(),
+  renewalHeight: integer("renewal_height").notNull(),
+  expirationHeight: integer("expiration_height").notNull(),
+  blocksRemaining: integer("blocks_remaining").notNull(),
+  transferState: text("transfer_state").notNull(),
+  resourceSummary: text("resource_summary"),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});

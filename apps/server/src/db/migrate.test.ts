@@ -20,6 +20,8 @@ describe("runMigrations", () => {
       "admin",
       "connections",
       "login_attempts",
+      "name_cache",
+      "name_meta",
       "recovery_codes",
       "send_idempotency",
       "sessions",

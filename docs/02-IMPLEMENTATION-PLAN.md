@@ -282,13 +282,13 @@ GET  /ready
 
 ### Phase 3: Name 閲覧
 
-- [ ] `getNames` / `getName` の Adapter 実装(wallet 一覧 + node の nameinfo を突合)
-- [ ] Name 一覧: 表示項目・フィルター・ソート・検索(§14)。100 件を 1 リクエストで取得し `name_cache` に保存、クライアント側でフィルター/ソート(1,000 件までこの方式で許容 §14.1)
-- [ ] Renewal/Expiration の残りブロック → 推定期間換算(domain 層の純関数)
-- [ ] Name 詳細: 基本情報・Transfer 状態・Wallet 所有確認(§15.1)
-- [ ] DNS Resource のデコード表示(NS/GLUE4/GLUE6/DS/TXT/SYNTH4/SYNTH6 + 未知型の Raw 表示 §16.1)
-- [ ] オークション履歴(OPEN/BID/REVEAL 等)の閲覧表示(§13.3)
-- [ ] ローカルラベル・メモの編集(§15.3)
+- [x] `getNames` / `getName` の Adapter 実装(wallet 一覧 + node の nameinfo を突合)
+- [x] Name 一覧: 表示項目・フィルター・ソート・検索(§14)。100 件を 1 リクエストで取得し `name_cache` に保存、クライアント側でフィルター/ソート(1,000 件までこの方式で許容 §14.1)
+- [x] Renewal/Expiration の残りブロック → 推定期間換算(domain 層の純関数)
+- [x] Name 詳細: 基本情報・Transfer 状態・Wallet 所有確認(§15.1)
+- [x] DNS Resource のデコード表示(NS/GLUE4/GLUE6/DS/TXT/SYNTH4/SYNTH6 + 未知型の Raw 表示 §16.1)
+- [x] オークション履歴(OPEN/BID/REVEAL 等)の閲覧表示(§13.3)
+- [x] ローカルラベル・メモの編集(§15.3)
 
 **完了条件**: 受け入れ条件 10, 11
 

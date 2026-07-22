@@ -31,11 +31,27 @@ export interface OwnedName {
   updatedAt: number;
 }
 
+export interface NameBid {
+  /** The true bid amount, blinded on-chain until reveal — only known for this wallet's own bids. */
+  value: bigint | null;
+  lockup: bigint;
+  height: number;
+  own: boolean;
+}
+
+export interface NameReveal {
+  value: bigint;
+  height: number;
+  own: boolean;
+}
+
 export interface NameDetails extends OwnedName {
   nameHash: string;
   ownerAddress: string | null;
   blockHeight: number;
   resource: NameResource | null;
+  bids: NameBid[];
+  reveals: NameReveal[];
 }
 
 export interface UpdateNameRequest {

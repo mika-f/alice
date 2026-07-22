@@ -105,3 +105,96 @@ export const rawTxPreviewSchema = z.object({
 });
 
 export type RawTxPreview = z.infer<typeof rawTxPreviewSchema>;
+
+/**
+ * Shape of hsd's covenants/namestate.js NameState.toJSON(), as returned by
+ * GET /wallet/:id/name, GET /wallet/:id/name/:name and GET /wallet/:id/auction/:name
+ * (observed against a live hsd 8.0.0 regtest node — see packages/hsd-client/src/name-mapper.ts
+ * for how these fields are interpreted).
+ *
+ * `stats` is a phase-dependent bag hsd computes server-side (bidPeriodEnd+blocksUntilReveal while
+ * bidding, renewalPeriodEnd+blocksUntilExpire once registered, etc.) — deliberately loose here
+ * rather than a discriminated union, since the mapper only ever looks for a `blocksUntil*` key and a
+ * couple of well-known period-end keys.
+ */
+export const rawNameOwnerSchema = z.object({
+  hash: z.string(),
+  index: z.number().int().nonnegative(),
+});
+
+export type RawNameOwner = z.infer<typeof rawNameOwnerSchema>;
+
+export const rawNameStatsSchema = z.record(z.string(), z.number()).nullable();
+
+export const rawNameSchema = z.object({
+  name: z.string(),
+  nameHash: z.string(),
+  state: z.enum(["OPENING", "LOCKED", "BIDDING", "REVEAL", "CLOSED", "REVOKED"]),
+  height: z.number().int(),
+  renewal: z.number().int(),
+  owner: rawNameOwnerSchema,
+  value: z.number().int(),
+  highest: z.number().int(),
+  /** Hex-encoded raw DNS Resource as committed on-chain; empty string when unset. */
+  data: z.string(),
+  transfer: z.number().int(),
+  revoked: z.number().int(),
+  claimed: z.number().int(),
+  renewals: z.number().int(),
+  registered: z.boolean(),
+  expired: z.boolean(),
+  weak: z.boolean(),
+  stats: rawNameStatsSchema,
+});
+
+export type RawName = z.infer<typeof rawNameSchema>;
+
+/**
+ * hsd's wallet http.js `/wallet/:id/auction/:name` — a superset of rawNameSchema with bids/reveals
+ * for every bidder tracked by this node, not just this wallet's own. `value` (the true bid amount)
+ * is blinded on-chain until reveal, so it's only present when `own` is true and the wallet knows
+ * its own blind; `lockup` (the visible output value covering the bid) is always present.
+ */
+export const rawAuctionBidSchema = z.object({
+  prevout: z.object({ hash: z.string(), index: z.number().int() }),
+  value: z.number().int().optional(),
+  lockup: z.number().int(),
+  height: z.number().int(),
+  own: z.boolean(),
+});
+
+export const rawAuctionRevealSchema = z.object({
+  prevout: z.object({ hash: z.string(), index: z.number().int() }),
+  value: z.number().int(),
+  height: z.number().int(),
+  own: z.boolean(),
+});
+
+export const rawAuctionSchema = rawNameSchema.extend({
+  bids: z.array(rawAuctionBidSchema),
+  reveals: z.array(rawAuctionRevealSchema),
+});
+
+export type RawAuction = z.infer<typeof rawAuctionSchema>;
+
+/** GET /wallet/:id/coin/:hash/:index — used only to confirm wallet ownership of a name's owner outpoint. */
+export const rawCoinSchema = z.object({
+  value: z.number().int(),
+  address: z.string(),
+});
+
+export type RawCoin = z.infer<typeof rawCoinSchema>;
+
+/**
+ * hsd's dns/resource.js Resource.toJSON(). `type` is a free-form string — hsd supports record
+ * kinds beyond the 7 this app decodes (spec §16.1), so this is intentionally permissive and the
+ * mapper falls back to an UNKNOWN record for anything it doesn't recognize.
+ */
+export const rawDnsRecordSchema = z.object({ type: z.string() }).passthrough();
+
+export const rawNameResourceSchema = z.object({
+  records: z.array(rawDnsRecordSchema),
+});
+
+export type RawDnsRecord = z.infer<typeof rawDnsRecordSchema>;
+export type RawNameResource = z.infer<typeof rawNameResourceSchema>;

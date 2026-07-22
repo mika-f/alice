@@ -48,6 +48,22 @@ export class HsdHttpClient {
     return this.semaphore.run(() => this.request<T>("PUT", path, body, 0));
   }
 
+  /** JSON-RPC over the same HTTP endpoint (POST / with {method, params}); read-only calls may be retried once. */
+  async rpc<T = unknown>(method: string, params: unknown[] = [], retry = true): Promise<T> {
+    const body = await this.semaphore.run(() =>
+      this.request<{ result: T; error: { message: string; code?: number } | null }>(
+        "POST",
+        "/",
+        { method, params },
+        retry ? 1 : 0,
+      ),
+    );
+    if (body.error) {
+      throw new HsdHttpError(`hsd rpc ${method} failed: ${body.error.message}`, body.error.code);
+    }
+    return body.result;
+  }
+
   private async request<T>(
     method: string,
     path: string,
