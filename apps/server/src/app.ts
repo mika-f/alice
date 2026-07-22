@@ -33,7 +33,7 @@ export function createApp(
 
   app.use("/api/*", attachSession(db));
   app.use("/api/*", ensureCsrfCookie());
-  app.use("/api/*", verifyCsrf());
+  app.use("/api/*", verifyCsrf(env));
   app.route("/api", createAuthRoutes(db, env));
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller));

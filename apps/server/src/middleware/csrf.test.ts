@@ -1,11 +1,14 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
+import type { Env } from "../env.js";
 import { CSRF_COOKIE, CSRF_HEADER, ensureCsrfCookie, verifyCsrf } from "./csrf.js";
+
+const env = { APP_URL: "https://wallet.example.com" } as Env;
 
 function buildApp() {
   const app = new Hono();
   app.use(ensureCsrfCookie());
-  app.use(verifyCsrf());
+  app.use(verifyCsrf(env));
   app.get("/token", (c) => c.text("ok"));
   app.post("/write", (c) => c.text("done"));
   return app;
@@ -71,7 +74,7 @@ describe("CSRF middleware", () => {
 
   it("rejects a mismatched Origin header even with matching tokens", async () => {
     const app = buildApp();
-    const res = await app.request("http://wallet.example.com/write", {
+    const res = await app.request("https://wallet.example.com/write", {
       method: "POST",
       headers: {
         cookie: `${CSRF_COOKIE}=real-token`,
@@ -80,5 +83,18 @@ describe("CSRF middleware", () => {
       },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("accepts a request whose Origin matches APP_URL even though the request itself arrived as plain http (reverse proxy terminating TLS, e.g. Traefik)", async () => {
+    const app = buildApp();
+    const res = await app.request("http://internal-container:3000/write", {
+      method: "POST",
+      headers: {
+        cookie: `${CSRF_COOKIE}=real-token`,
+        [CSRF_HEADER]: "real-token",
+        origin: "https://wallet.example.com",
+      },
+    });
+    expect(res.status).toBe(200);
   });
 });
