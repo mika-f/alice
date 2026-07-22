@@ -4,6 +4,7 @@ import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import type { Env } from "../env.js";
 import { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import { RescanTracker } from "../services/rescan-tracker.js";
 import { StatusPoller } from "../services/status-poller.js";
 
 /** Runs against the regtest hsd started via `docker/compose.dev.yaml`; skipped otherwise. */
@@ -106,7 +107,7 @@ async function setUpAndLogIn(app: ReturnType<typeof createApp>, jar: Jar) {
 describe.skipIf(!available)("connection routes against a live regtest hsd", () => {
   it("test reports success for a working connection", async () => {
     const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager));
+    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager), new RescanTracker());
     const jar = cookieJar();
     const csrf = await setUpAndLogIn(app, jar);
 
@@ -135,7 +136,7 @@ describe.skipIf(!available)("connection routes against a live regtest hsd", () =
 
   it("PUT saves and immediately applies the new connection to /ready", async () => {
     const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager));
+    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager), new RescanTracker());
     const jar = cookieJar();
     const csrf = await setUpAndLogIn(app, jar);
 
@@ -167,7 +168,7 @@ describe.skipIf(!available)("connection routes against a live regtest hsd", () =
 
   it("PUT rejects a network mismatch and does not save or reconfigure", async () => {
     const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager));
+    const app = createApp(env, hsdManager, db, new StatusPoller(hsdManager), new RescanTracker());
     const jar = cookieJar();
     const csrf = await setUpAndLogIn(app, jar);
 

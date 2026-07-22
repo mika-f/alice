@@ -5,7 +5,10 @@ import { createApp } from "../app.js";
 import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import type { Env } from "../env.js";
+import { listWatchedBroadcasts } from "../services/broadcast-watch-service.js";
 import { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import { listNotifications } from "../services/notification-service.js";
+import { RescanTracker } from "../services/rescan-tracker.js";
 import { StatusPoller } from "../services/status-poller.js";
 
 const NODE_URL = process.env.HSD_TEST_NODE_URL ?? "http://127.0.0.1:14037";
@@ -63,7 +66,7 @@ beforeEach(() => {
 
 function buildApp() {
   const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
-  return createApp(env, hsdManager, db, new StatusPoller(hsdManager));
+  return createApp(env, hsdManager, db, new StatusPoller(hsdManager), new RescanTracker());
 }
 
 interface Jar {
@@ -316,6 +319,42 @@ describe.skipIf(!available)("wallet routes against a live regtest hsd", () => {
     const sendEntries = entries.filter((e) => e.action === "wallet.send");
     expect(sendEntries.some((e) => e.outcome === "failure")).toBe(true);
     expect(sendEntries.some((e) => e.outcome === "success")).toBe(true);
+  });
+
+  it("watches a real send, then notifies tx-confirmed once the status poller sees it mined", async () => {
+    const app = buildApp();
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const receive = await readJson<{ address: string }>(
+      await req(app, jar, "POST", "/api/wallet/receive-address", csrf),
+    );
+    await nodeRpc("generatetoaddress", [20, receive.address]);
+    const destination = await readJson<{ address: string }>(
+      await req(app, jar, "POST", "/api/wallet/receive-address", csrf),
+    );
+
+    const sendRes = await req(app, jar, "POST", "/api/wallet/send", csrf, {
+      address: destination.address,
+      amount: "50000000",
+      feeRate: 10_000,
+      idempotencyKey: randomUUID(),
+    });
+    expect(sendRes.status).toBe(200);
+    const sent = await readJson<{ txid: string }>(sendRes);
+
+    expect(listWatchedBroadcasts(db).some((w) => w.txid === sent.txid)).toBe(true);
+
+    await nodeRpc("generatetoaddress", [1, receive.address]);
+
+    const hsdManager = HsdConnectionManager.fromEnvOrDb(db, env);
+    const poller = new StatusPoller(hsdManager, db);
+    await poller.refresh();
+
+    expect(
+      listNotifications(db).some((n) => n.type === "tx-confirmed" && n.message.includes(sent.txid)),
+    ).toBe(true);
+    expect(listWatchedBroadcasts(db).some((w) => w.txid === sent.txid)).toBe(false);
   });
 
   it("imports a wallet from a mnemonic", async () => {

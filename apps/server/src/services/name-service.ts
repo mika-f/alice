@@ -12,6 +12,7 @@ import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { nameCache, nameMeta } from "../db/schema.js";
+import { watchBroadcast } from "./broadcast-watch-service.js";
 
 export interface NameMetaInput {
   label?: string;
@@ -93,11 +94,13 @@ export function previewUpdateName(
 
 /** Spec §9.5: minimize how long the wallet stays unlocked; harmless no-op if there's no passphrase. */
 export async function updateName(
+  db: Db,
   hsd: HsdV8Adapter,
   name: string,
   records: DnsRecord[],
 ): Promise<BroadcastResult> {
   const result = await hsd.updateName({ name, records });
+  watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;
 }
@@ -106,8 +109,9 @@ export function previewRenewName(hsd: HsdV8Adapter, name: string): Promise<Broad
   return hsd.previewRenewName(name);
 }
 
-export async function renewName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+export async function renewName(db: Db, hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
   const result = await hsd.renewName(name);
+  watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;
 }
@@ -150,6 +154,7 @@ export async function renewNamesBatch(
 
     try {
       const result = await hsd.renewName(name);
+      watchBroadcast(db, result.txid, name);
       results.push({ name, status: "success", txid: result.txid });
     } catch (error) {
       results.push({
@@ -175,11 +180,13 @@ export function previewTransferName(
 }
 
 export async function transferName(
+  db: Db,
   hsd: HsdV8Adapter,
   name: string,
   address: string,
 ): Promise<BroadcastResult> {
   const result = await hsd.transferName({ name, address });
+  watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;
 }
@@ -188,14 +195,24 @@ export function previewFinalizeName(hsd: HsdV8Adapter, name: string): Promise<Br
   return hsd.previewFinalizeName(name);
 }
 
-export async function finalizeName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+export async function finalizeName(
+  db: Db,
+  hsd: HsdV8Adapter,
+  name: string,
+): Promise<BroadcastResult> {
   const result = await hsd.finalizeName(name);
+  watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;
 }
 
-export async function revokeName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+export async function revokeName(
+  db: Db,
+  hsd: HsdV8Adapter,
+  name: string,
+): Promise<BroadcastResult> {
   const result = await hsd.revokeName(name);
+  watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;
 }

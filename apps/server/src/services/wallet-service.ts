@@ -12,13 +12,20 @@ import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { addresses, sendIdempotency, txMeta } from "../db/schema.js";
+import { watchBroadcast } from "./broadcast-watch-service.js";
+import type { RescanTracker } from "./rescan-tracker.js";
 
 export function getBalance(hsd: HsdV8Adapter): Promise<WalletBalance> {
   return hsd.getBalance();
 }
 
-export function getWalletStatus(hsd: HsdV8Adapter): Promise<WalletStatus> {
-  return hsd.getWalletStatus();
+/** Overlays the app-level rescan flag (see RescanTracker) — hsd itself has no such signal. */
+export async function getWalletStatus(
+  hsd: HsdV8Adapter,
+  rescanTracker: RescanTracker,
+): Promise<WalletStatus> {
+  const status = await hsd.getWalletStatus();
+  return { ...status, rescanning: rescanTracker.get().inProgress };
 }
 
 export interface AddressHistoryEntry {
@@ -107,6 +114,8 @@ export async function send(
     setTxMeta(db, result.txid, { label: request.label, memo: request.memo });
   }
 
+  watchBroadcast(db, result.txid, request.label);
+
   // Spec §9.5: minimize how long the wallet stays unlocked; harmless no-op if there's no passphrase.
   await hsd.lock();
 
@@ -162,7 +171,11 @@ export function unlockWallet(
   return hsd.unlock(passphrase, timeoutSeconds);
 }
 
-export async function importMnemonic(hsd: HsdV8Adapter, input: MnemonicImportInput): Promise<void> {
+export async function importMnemonic(
+  hsd: HsdV8Adapter,
+  rescanTracker: RescanTracker,
+  input: MnemonicImportInput,
+): Promise<void> {
   await hsd.createWalletFromMnemonic(input);
-  await hsd.rescan(0);
+  await rescanTracker.track(() => hsd.rescan(0));
 }

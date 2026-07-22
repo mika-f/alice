@@ -7,8 +7,16 @@ import {
 } from "@alice-hns-wallet/domain";
 import { isSupportedHsdVersion } from "@alice-hns-wallet/hsd-client";
 import type { Db } from "../db/client.js";
+import { listWatchedBroadcasts, unwatchBroadcast } from "./broadcast-watch-service.js";
 import { createNotification, getRenewalThresholds } from "./notification-service.js";
 import type { HsdConnectionManager } from "./hsd-connection-manager.js";
+import type { RescanTracker } from "./rescan-tracker.js";
+
+/** A watched broadcast missing from the wallet for this long is treated as dropped, not just not-yet-indexed. */
+const BROADCAST_FAILURE_GRACE_MS = 10 * 60_000;
+
+/** How long a rescan can run before it's flagged as taking longer than expected. */
+const SYNC_DELAY_THRESHOLD_MS = 5 * 60_000;
 
 export interface StatusSnapshot {
   node: NodeStatus | null;
@@ -49,6 +57,7 @@ export class StatusPoller {
     private readonly hsdManager: HsdConnectionManager,
     private readonly db: Db | null = null,
     private readonly intervalMs = 30_000,
+    private readonly rescanTracker: RescanTracker | null = null,
   ) {}
 
   start(): void {
@@ -83,6 +92,9 @@ export class StatusPoller {
     let walletError: string | null = null;
     try {
       wallet = await hsd.getWalletStatus();
+      if (this.rescanTracker) {
+        wallet = { ...wallet, rescanning: this.rescanTracker.get().inProgress };
+      }
     } catch (error) {
       walletError = errorMessage(error);
     }
@@ -94,6 +106,10 @@ export class StatusPoller {
       await this.checkNameNotifications().catch(() => {
         // Best-effort: a broken name check must never take down the status poll itself.
       });
+      await this.checkWatchedBroadcasts().catch(() => {
+        // Best-effort: a broken broadcast check must never take down the status poll itself.
+      });
+      this.checkSyncDelay();
     }
 
     return this.snapshot;
@@ -175,5 +191,52 @@ export class StatusPoller {
       }
       this.lastTransferState.set(item.name, item.transferState);
     }
+  }
+
+  /**
+   * Every broadcast made by this app (send/update/renew/transfer/finalize/revoke) is watched
+   * until it either confirms or has been missing from the wallet for long enough to call dropped —
+   * a brand-new broadcast is expected to be immediately visible (unconfirmed) since the same
+   * wallet that broadcast it also recorded it, so "missing" past the grace period is a real signal,
+   * not just propagation delay.
+   */
+  private async checkWatchedBroadcasts(): Promise<void> {
+    const watched = listWatchedBroadcasts(this.db!);
+    if (watched.length === 0) return;
+
+    const hsd = this.hsdManager.get();
+    for (const item of watched) {
+      const tx = await hsd.getTransaction(item.txid);
+      const label = item.label ? `${item.label} (${item.txid})` : item.txid;
+
+      if (tx && tx.confirmations > 0) {
+        createNotification(this.db!, {
+          type: "tx-confirmed",
+          message: `Transaction confirmed: ${label}`,
+        });
+        unwatchBroadcast(this.db!, item.txid);
+      } else if (!tx && Date.now() - item.createdAt.getTime() > BROADCAST_FAILURE_GRACE_MS) {
+        createNotification(this.db!, {
+          type: "tx-failed",
+          message: `Transaction appears to have failed (dropped from the mempool): ${label}`,
+        });
+        unwatchBroadcast(this.db!, item.txid);
+      }
+    }
+  }
+
+  /** Announces once per rescan that's still running past the threshold, not on every tick. */
+  private checkSyncDelay(): void {
+    if (!this.rescanTracker) return;
+    const state = this.rescanTracker.get();
+    const isDelayed =
+      state.inProgress &&
+      state.startedAt !== null &&
+      Date.now() - state.startedAt > SYNC_DELAY_THRESHOLD_MS;
+    this.trackProblem(
+      "wallet-sync-delayed",
+      isDelayed,
+      "Wallet rescan is taking longer than expected",
+    );
   }
 }

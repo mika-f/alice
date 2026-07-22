@@ -14,6 +14,7 @@ import { rateLimit } from "../middleware/rate-limit.js";
 import { requireReauth } from "../middleware/reauth.js";
 import { requireAuth } from "../middleware/session.js";
 import type { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import type { RescanTracker } from "../services/rescan-tracker.js";
 import {
   getBalance,
   getWalletStatus,
@@ -67,7 +68,12 @@ function serializeTransaction(tx: TransactionRecord) {
   };
 }
 
-export function createWalletRoutes(db: Db, env: Env, hsdManager: HsdConnectionManager) {
+export function createWalletRoutes(
+  db: Db,
+  env: Env,
+  hsdManager: HsdConnectionManager,
+  rescanTracker: RescanTracker,
+) {
   const app = new Hono<AppEnv>();
 
   const estimateLimiter = rateLimit({ windowMs: 60_000, max: 30, trustProxy: env.TRUST_PROXY });
@@ -81,7 +87,7 @@ export function createWalletRoutes(db: Db, env: Env, hsdManager: HsdConnectionMa
   });
 
   app.get("/wallet/status", requireAuth(), async (c) => {
-    const status = await getWalletStatus(hsdManager.get());
+    const status = await getWalletStatus(hsdManager.get(), rescanTracker);
     return c.json(status);
   });
 
@@ -140,7 +146,7 @@ export function createWalletRoutes(db: Db, env: Env, hsdManager: HsdConnectionMa
       const parsed = sendRequestSchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
       const result = await send(db, hsdManager.get(), {
@@ -188,7 +194,7 @@ export function createWalletRoutes(db: Db, env: Env, hsdManager: HsdConnectionMa
       const parsed = mnemonicImportRequestSchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-      await importMnemonic(hsdManager.get(), parsed.data);
+      await importMnemonic(hsdManager.get(), rescanTracker, parsed.data);
       return c.body(null, 204);
     },
   );

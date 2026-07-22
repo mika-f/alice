@@ -142,6 +142,10 @@ function DashboardPage() {
             </div>
           </div>
 
+          {status.data?.wallet.rescanning && (
+            <p className="muted">Wallet rescan in progress — balance and history may lag.</p>
+          )}
+
           <div className="field-row">
             <Link to="/send" className="button">
               Send

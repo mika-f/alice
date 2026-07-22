@@ -24,6 +24,7 @@ import { requireReauth } from "../middleware/reauth.js";
 import { requireAuth } from "../middleware/session.js";
 import { getAdmin, verifyCredentials } from "../services/auth-service.js";
 import type { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import type { RescanTracker } from "../services/rescan-tracker.js";
 import {
   finalizeName,
   getNameDetail,
@@ -97,7 +98,12 @@ function serializeActionResults(results: NameActionResult[]) {
   return results.map((r) => ({ name: r.name, status: r.status, txid: r.txid, reason: r.reason }));
 }
 
-export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionManager) {
+export function createNameRoutes(
+  db: Db,
+  env: Env,
+  hsdManager: HsdConnectionManager,
+  rescanTracker: RescanTracker,
+) {
   const app = new Hono<AppEnv>();
 
   const previewLimiter = rateLimit({ windowMs: 60_000, max: 30, trustProxy: env.TRUST_PROXY });
@@ -159,10 +165,15 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
       const issues = validateResource(parsed.data.records);
       if (issues.length > 0) return c.json({ error: "Invalid resource", issues }, 400);
 
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-      const result = await updateName(hsdManager.get(), c.req.param("name"), parsed.data.records);
+      const result = await updateName(
+        db,
+        hsdManager.get(),
+        c.req.param("name"),
+        parsed.data.records,
+      );
       return c.json(serializeBroadcastResult(result));
     },
   );
@@ -178,10 +189,10 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
     requireReauth(),
     renewLimiter,
     async (c) => {
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-      const result = await renewName(hsdManager.get(), c.req.param("name"));
+      const result = await renewName(db, hsdManager.get(), c.req.param("name"));
       return c.json(serializeBroadcastResult(result));
     },
   );
@@ -222,10 +233,15 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
       const parsed = transferNameRequestSchema.safeParse(await c.req.json().catch(() => null));
       if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-      const result = await transferName(hsdManager.get(), c.req.param("name"), parsed.data.address);
+      const result = await transferName(
+        db,
+        hsdManager.get(),
+        c.req.param("name"),
+        parsed.data.address,
+      );
       return c.json(serializeBroadcastResult(result));
     },
   );
@@ -241,10 +257,10 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
     requireReauth(),
     finalizeLimiter,
     async (c) => {
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-      const result = await finalizeName(hsdManager.get(), c.req.param("name"));
+      const result = await finalizeName(db, hsdManager.get(), c.req.param("name"));
       return c.json(serializeBroadcastResult(result));
     },
   );
@@ -281,10 +297,10 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
         (await verifyAndConsumeRecoveryCode(db, parsed.data.code));
       if (!codeValid) return c.json({ error: "Invalid TOTP code" }, 401);
 
-      const status = await getWalletStatus(hsdManager.get());
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-      const result = await revokeName(hsdManager.get(), c.req.param("name"));
+      const result = await revokeName(db, hsdManager.get(), c.req.param("name"));
       return c.json(serializeBroadcastResult(result));
     },
   );

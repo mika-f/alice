@@ -4,6 +4,7 @@ import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import type { Env } from "../env.js";
 import { createNotification } from "../services/notification-service.js";
+import { RescanTracker } from "../services/rescan-tracker.js";
 
 const env: Env = {
   APP_URL: "http://localhost:3000",
@@ -37,7 +38,7 @@ beforeEach(() => {
 });
 
 function buildApp() {
-  return createApp(env, fakeHsdManager(), db, fakeStatusPoller());
+  return createApp(env, fakeHsdManager(), db, fakeStatusPoller(), new RescanTracker());
 }
 
 interface Jar {

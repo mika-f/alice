@@ -6,6 +6,7 @@ import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import type { Env } from "../env.js";
 import { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import { RescanTracker } from "../services/rescan-tracker.js";
 import { StatusPoller } from "../services/status-poller.js";
 
 const NODE_URL = process.env.HSD_TEST_NODE_URL ?? "http://127.0.0.1:14037";
@@ -50,7 +51,7 @@ beforeEach(() => {
 
 function buildApp(customEnv: Env = env) {
   const hsdManager = HsdConnectionManager.fromEnvOrDb(db, customEnv);
-  return createApp(customEnv, hsdManager, db, new StatusPoller(hsdManager));
+  return createApp(customEnv, hsdManager, db, new StatusPoller(hsdManager), new RescanTracker());
 }
 
 async function nodeRpc<T = unknown>(method: string, params: unknown[] = []): Promise<T> {

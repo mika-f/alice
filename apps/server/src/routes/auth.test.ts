@@ -5,6 +5,7 @@ import { createApp } from "../app.js";
 import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
 import type { Env } from "../env.js";
+import { RescanTracker } from "../services/rescan-tracker.js";
 import { beginTotpEnrollment, confirmTotpEnrollment } from "../services/totp-service.js";
 
 const env: Env = {
@@ -51,7 +52,7 @@ function fakeStatusPoller() {
 }
 
 function buildApp() {
-  return createApp(env, fakeHsdManager(), db, fakeStatusPoller());
+  return createApp(env, fakeHsdManager(), db, fakeStatusPoller(), new RescanTracker());
 }
 
 interface Jar {

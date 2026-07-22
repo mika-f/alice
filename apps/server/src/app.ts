@@ -16,6 +16,7 @@ import { createReadyRoute } from "./routes/ready.js";
 import { createStatusRoutes } from "./routes/status.js";
 import { createWalletRoutes } from "./routes/wallet.js";
 import type { HsdConnectionManager } from "./services/hsd-connection-manager.js";
+import type { RescanTracker } from "./services/rescan-tracker.js";
 import type { StatusPoller } from "./services/status-poller.js";
 import { mountStaticWeb } from "./static.js";
 import type { AppEnv } from "./types.js";
@@ -25,6 +26,7 @@ export function createApp(
   hsdManager: HsdConnectionManager,
   db: Db,
   statusPoller: StatusPoller,
+  rescanTracker: RescanTracker,
 ) {
   const app = new Hono<AppEnv>();
 
@@ -55,8 +57,8 @@ export function createApp(
   app.route("/api", createAuthRoutes(db, env));
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
   app.route("/api", createStatusRoutes(statusPoller));
-  app.route("/api", createWalletRoutes(db, env, hsdManager));
-  app.route("/api", createNameRoutes(db, env, hsdManager));
+  app.route("/api", createWalletRoutes(db, env, hsdManager, rescanTracker));
+  app.route("/api", createNameRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNotificationRoutes(db));
   app.route("/api", createAuditRoutes(db));
 

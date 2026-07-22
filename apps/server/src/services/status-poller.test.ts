@@ -1,8 +1,11 @@
-import type { OwnedName } from "@alice-hns-wallet/domain";
+import type { OwnedName, TransactionRecord } from "@alice-hns-wallet/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
+import { watchedBroadcasts } from "../db/schema.js";
+import { listWatchedBroadcasts, watchBroadcast } from "./broadcast-watch-service.js";
 import { listNotifications } from "./notification-service.js";
+import { RescanTracker } from "./rescan-tracker.js";
 import { StatusPoller } from "./status-poller.js";
 
 function fakeManager(
@@ -13,6 +16,7 @@ function fakeManager(
     synced: boolean;
   }> = {},
   names: OwnedName[] = [],
+  getTransaction: (txid: string) => Promise<TransactionRecord | null> = async () => null,
 ) {
   const adapter = {
     getStatus: vi.fn(async () => {
@@ -39,6 +43,7 @@ function fakeManager(
       };
     }),
     getNames: vi.fn(async () => names),
+    getTransaction: vi.fn(getTransaction),
   };
   const manager = { get: () => adapter } as never;
   return { manager, adapter };
@@ -231,6 +236,126 @@ describe("StatusPoller", () => {
       expect(
         notifications.some((n) => n.type === "finalize-available" && n.name === "example"),
       ).toBe(true);
+    });
+  });
+
+  describe("watched broadcasts (spec Phase 5: tx-confirmed/tx-failed)", () => {
+    function freshDb(): Db {
+      const created = createDb(":memory:");
+      runMigrations(created);
+      return created;
+    }
+
+    it("notifies tx-confirmed and unwatches once the tx has confirmations", async () => {
+      const db = freshDb();
+      watchBroadcast(db, "a".repeat(64), "example");
+
+      const { manager } = fakeManager({}, [], async (txid) => ({
+        txid,
+        kind: "send",
+        amount: 100n,
+        fee: 10n,
+        timestamp: Date.now(),
+        blockHeight: 100,
+        confirmations: 1,
+        status: "confirmed",
+        inputs: [],
+        outputs: [],
+      }));
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.some((n) => n.type === "tx-confirmed")).toBe(true);
+      expect(listWatchedBroadcasts(db)).toHaveLength(0);
+    });
+
+    it("leaves an unconfirmed-but-found tx watched without notifying", async () => {
+      const db = freshDb();
+      watchBroadcast(db, "b".repeat(64));
+
+      const { manager } = fakeManager({}, [], async (txid) => ({
+        txid,
+        kind: "send",
+        amount: 100n,
+        fee: 10n,
+        timestamp: Date.now(),
+        blockHeight: -1,
+        confirmations: 0,
+        status: "pending",
+        inputs: [],
+        outputs: [],
+      }));
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      expect(listNotifications(db)).toHaveLength(0);
+      expect(listWatchedBroadcasts(db)).toHaveLength(1);
+    });
+
+    it("notifies tx-failed only after a missing tx has aged past the grace period", async () => {
+      const db = freshDb();
+      const txid = "c".repeat(64);
+      watchBroadcast(db, txid);
+      // Backdate createdAt well past the grace period, simulating a tx that's been missing a while.
+      db.update(watchedBroadcasts)
+        .set({ createdAt: new Date(Date.now() - 60 * 60_000) })
+        .run();
+
+      const { manager } = fakeManager({}, [], async () => null);
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.some((n) => n.type === "tx-failed")).toBe(true);
+      expect(listWatchedBroadcasts(db)).toHaveLength(0);
+    });
+
+    it("does not flag a freshly missing tx as failed yet", async () => {
+      const db = freshDb();
+      watchBroadcast(db, "d".repeat(64));
+
+      const { manager } = fakeManager({}, [], async () => null);
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      expect(listNotifications(db).some((n) => n.type === "tx-failed")).toBe(false);
+      expect(listWatchedBroadcasts(db)).toHaveLength(1);
+    });
+  });
+
+  describe("wallet-sync-delayed (spec Phase 5)", () => {
+    function freshDb(): Db {
+      const created = createDb(":memory:");
+      runMigrations(created);
+      return created;
+    }
+
+    it("notifies once a rescan has been running past the threshold", async () => {
+      const db = freshDb();
+      const rescanTracker = new RescanTracker();
+      // Simulate a rescan that started 10 minutes ago, well past the 5-minute threshold.
+      void rescanTracker.track(() => new Promise(() => {}));
+      Object.assign(rescanTracker.get(), { startedAt: Date.now() - 10 * 60_000 });
+
+      const { manager } = fakeManager();
+      const poller = new StatusPoller(manager, db, undefined, rescanTracker);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(notifications.some((n) => n.type === "wallet-sync-delayed")).toBe(true);
+    });
+
+    it("does not notify while a rescan is still within the threshold", async () => {
+      const db = freshDb();
+      const rescanTracker = new RescanTracker();
+      void rescanTracker.track(() => new Promise(() => {}));
+
+      const { manager } = fakeManager();
+      const poller = new StatusPoller(manager, db, undefined, rescanTracker);
+      await poller.refresh();
+
+      expect(listNotifications(db).some((n) => n.type === "wallet-sync-delayed")).toBe(false);
     });
   });
 });
