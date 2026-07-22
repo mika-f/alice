@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { createStatusRoutes } from "./status.js";
+import { createDb } from "../db/client.js";
+import { runMigrations } from "../db/migrate.js";
 import type { AppEnv } from "../types.js";
 import type { StatusSnapshot } from "../services/status-poller.js";
 
@@ -9,6 +11,9 @@ function fakePoller(snapshot: StatusSnapshot) {
 }
 
 function buildApp(snapshot: StatusSnapshot, authenticated: boolean) {
+  const db = createDb(":memory:");
+  runMigrations(db);
+
   const app = new Hono<AppEnv>();
   app.use(async (c, next) => {
     c.set(
@@ -19,7 +24,7 @@ function buildApp(snapshot: StatusSnapshot, authenticated: boolean) {
     );
     await next();
   });
-  app.route("/api", createStatusRoutes(fakePoller(snapshot)));
+  app.route("/api", createStatusRoutes(fakePoller(snapshot), db));
   return app;
 }
 
@@ -71,7 +76,17 @@ describe("GET /api/status", () => {
         synced: true,
         progress: 1,
       },
-      wallet: { connected: true, walletHeight: 42, locked: true, rescanning: false },
+      wallet: {
+        connected: true,
+        network: "regtest",
+        walletHeight: 42,
+        locked: true,
+        rescanning: false,
+      },
+      warnings: [
+        { type: "wallet-locked", message: "Wallet is locked" },
+        { type: "backup-stale", message: "Backup has never been confirmed" },
+      ],
       lastUpdated: 123,
     });
   });
@@ -99,7 +114,17 @@ describe("GET /api/status", () => {
         synced: false,
         progress: 0,
       },
-      wallet: { connected: false, walletHeight: null, locked: false, rescanning: false },
+      wallet: {
+        connected: false,
+        network: null,
+        walletHeight: null,
+        locked: false,
+        rescanning: false,
+      },
+      warnings: [
+        { type: "node-disconnected", message: "Node is unreachable: unreachable" },
+        { type: "backup-stale", message: "Backup has never been confirmed" },
+      ],
       lastUpdated: 0,
     });
   });

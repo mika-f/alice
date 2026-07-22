@@ -357,6 +357,23 @@ describe.skipIf(!available)("wallet routes against a live regtest hsd", () => {
     expect(listWatchedBroadcasts(db).some((w) => w.txid === sent.txid)).toBe(false);
   });
 
+  it("flags a stale backup on the dashboard status and clears it once confirmed", async () => {
+    const app = buildApp();
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const statusRes = await app.request("/api/status", { headers: { cookie: jar.header() } });
+    const status = await readJson<{ warnings: { type: string }[] }>(statusRes);
+    expect(status.warnings.some((w) => w.type === "backup-stale")).toBe(true);
+
+    const confirmRes = await req(app, jar, "POST", "/api/settings/backup/confirm", csrf);
+    expect(confirmRes.status).toBe(200);
+
+    const statusAfter = await app.request("/api/status", { headers: { cookie: jar.header() } });
+    const after = await readJson<{ warnings: { type: string }[] }>(statusAfter);
+    expect(after.warnings.some((w) => w.type === "backup-stale")).toBe(false);
+  });
+
   it("imports a wallet from a mnemonic", async () => {
     const app = buildApp();
     const jar = cookieJar();

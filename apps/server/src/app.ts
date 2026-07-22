@@ -8,6 +8,7 @@ import { securityHeaders } from "./middleware/security-headers.js";
 import { attachSession } from "./middleware/session.js";
 import { createAuditRoutes } from "./routes/audit.js";
 import { createAuthRoutes } from "./routes/auth.js";
+import { createBackupRoutes } from "./routes/backup.js";
 import { createConnectionRoutes } from "./routes/connection.js";
 import { healthRoute } from "./routes/health.js";
 import { createNameRoutes } from "./routes/name.js";
@@ -56,7 +57,8 @@ export function createApp(
   app.use("/api/*", verifyCsrf(env));
   app.route("/api", createAuthRoutes(db, env));
   app.route("/api", createConnectionRoutes(db, env, hsdManager));
-  app.route("/api", createStatusRoutes(statusPoller));
+  app.route("/api", createStatusRoutes(statusPoller, db));
+  app.route("/api", createBackupRoutes(db, env));
   app.route("/api", createWalletRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNameRoutes(db, env, hsdManager, rescanTracker));
   app.route("/api", createNotificationRoutes(db));

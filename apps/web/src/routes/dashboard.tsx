@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { confirmBackup } from "../api/backup.js";
 import { logout } from "../api/auth.js";
 import { apiFetch } from "../api/client.js";
 import { getBalance, lockWallet, unlockWallet } from "../api/wallet.js";
@@ -14,6 +15,11 @@ export const dashboardRoute = createRoute({
   component: DashboardPage,
 });
 
+interface DashboardWarning {
+  type: string;
+  message: string;
+}
+
 interface StatusResponse {
   node: {
     connected: boolean;
@@ -24,7 +30,14 @@ interface StatusResponse {
     synced: boolean;
     progress: number;
   };
-  wallet: { connected: boolean; walletHeight: number | null; locked: boolean; rescanning: boolean };
+  wallet: {
+    connected: boolean;
+    network: string | null;
+    walletHeight: number | null;
+    locked: boolean;
+    rescanning: boolean;
+  };
+  warnings: DashboardWarning[];
 }
 
 function useStatus(enabled: boolean) {
@@ -74,6 +87,11 @@ function DashboardPage() {
     },
   });
 
+  const confirmBackupMutation = useMutation({
+    mutationFn: confirmBackup,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["status"] }),
+  });
+
   return (
     <main className="dashboard">
       <div className="dashboard-header">
@@ -87,12 +105,24 @@ function DashboardPage() {
 
       {session.data?.authenticated && (
         <>
-          {status.data && !status.data.node.connected && (
-            <div className="error-banner">Node is unreachable.</div>
-          )}
-          {status.data && !status.data.wallet.connected && (
-            <div className="error-banner">Wallet is unreachable.</div>
-          )}
+          {status.data?.warnings.map((warning) => (
+            <div key={warning.type} className="error-banner">
+              {warning.message}
+              {warning.type === "backup-stale" && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => confirmBackupMutation.mutate()}
+                    disabled={confirmBackupMutation.isPending}
+                  >
+                    I've confirmed my backup
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
 
           <div className="status-grid">
             <div className="status-tile">
@@ -141,10 +171,6 @@ function DashboardPage() {
               <div className="value">{status.data?.node.peerCount ?? "—"}</div>
             </div>
           </div>
-
-          {status.data?.wallet.rescanning && (
-            <p className="muted">Wallet rescan in progress — balance and history may lag.</p>
-          )}
 
           <div className="field-row">
             <Link to="/send" className="button">

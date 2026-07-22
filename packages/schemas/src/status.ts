@@ -17,17 +17,34 @@ export const nodeStatusResponseSchema = z.object({
 
 export const walletStatusResponseSchema = z.object({
   connected: z.boolean(),
+  network: networkSchema.nullable(),
   walletHeight: z.number().int().nonnegative().nullable(),
   locked: z.boolean(),
   rescanning: z.boolean(),
 });
 
+export const dashboardWarningResponseSchema = z.object({
+  type: z.enum([
+    "node-disconnected",
+    "wallet-disconnected",
+    "node-unsynced",
+    "wallet-unsynced",
+    "network-mismatch",
+    "wallet-locked",
+    "hsd-version-unsupported",
+    "backup-stale",
+  ]),
+  message: z.string(),
+});
+
 export const statusResponseSchema = z.object({
   node: nodeStatusResponseSchema,
   wallet: walletStatusResponseSchema,
+  warnings: z.array(dashboardWarningResponseSchema),
   lastUpdated: z.number(),
 });
 
 export type NodeStatusResponse = z.infer<typeof nodeStatusResponseSchema>;
 export type WalletStatusResponse = z.infer<typeof walletStatusResponseSchema>;
+export type DashboardWarningResponse = z.infer<typeof dashboardWarningResponseSchema>;
 export type StatusResponse = z.infer<typeof statusResponseSchema>;
