@@ -1,12 +1,14 @@
-import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { Hono } from "hono";
+import type { HsdConnectionManager } from "../services/hsd-connection-manager.js";
+import type { AppEnv } from "../types.js";
 
 /**
  * Spec §22.4: no balances, names, or wallet IDs in an unauthenticated response —
  * booleans only.
  */
-export function createReadyRoute(hsd: HsdV8Adapter) {
-  return new Hono().get("/ready", async (c) => {
+export function createReadyRoute(hsdManager: HsdConnectionManager) {
+  return new Hono<AppEnv>().get("/ready", async (c) => {
+    const hsd = hsdManager.get();
     const checks = {
       node: false,
       wallet: false,

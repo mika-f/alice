@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@alice-hns-wallet/domain": "workspace:*",
+    "@alice-hns-wallet/schemas": "workspace:*",
     "@tanstack/react-query": "^5.62.11",
     "@tanstack/react-router": "^1.95.1",
     "react": "^18.3.1",

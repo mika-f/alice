@@ -35,6 +35,15 @@ jobs:
           HSD_TEST_WALLET_URL: http://127.0.0.1:14039
           HSD_TEST_API_KEY: devkey
 
+      - name: Run integration tests against regtest hsd
+        run: |
+          pnpm --filter @alice-hns-wallet/hsd-client test:integration
+          pnpm --filter @alice-hns-wallet/server test:integration
+        env:
+          HSD_TEST_NODE_URL: http://127.0.0.1:14037
+          HSD_TEST_WALLET_URL: http://127.0.0.1:14039
+          HSD_TEST_API_KEY: devkey
+
       - name: Stop regtest hsd
         if: always()
         run: docker compose -f docker/compose.dev.yaml --profile hsd down -v

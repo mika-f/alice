@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `pending_totp` integer DEFAULT false NOT NULL;

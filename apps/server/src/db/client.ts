@@ -1,0 +1,17 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import * as schema from "./schema.js";
+
+export type Db = ReturnType<typeof drizzle<typeof schema>>;
+
+export function createDb(databaseUrl: string): Db {
+  if (databaseUrl !== ":memory:") {
+    mkdirSync(dirname(databaseUrl), { recursive: true });
+  }
+  const sqlite = new Database(databaseUrl);
+  sqlite.pragma("journal_mode = WAL");
+  sqlite.pragma("foreign_keys = ON");
+  return drizzle(sqlite, { schema });
+}
