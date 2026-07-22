@@ -1,0 +1,32 @@
+name: alice-hns-wallet-dev
+
+services:
+  hsd:
+    image: handshakeorg/hsd:latest
+    profiles: ["hsd"]
+    command:
+      - --network=regtest
+      - --api-key=${HSD_DEV_API_KEY:-devkey}
+      - --wallet-api-key=${HSD_DEV_API_KEY:-devkey}
+      - --http-host=0.0.0.0
+      - --wallet-http-host=0.0.0.0
+    ports:
+      - "14037:14037" # node HTTP API
+      - "14038:14038" # P2P
+      - "14039:14039" # wallet HTTP API
+    volumes:
+      - hsd-dev-data:/root/.hsd
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:14037/').then(()=>process.exit(0)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  hsd-dev-data:

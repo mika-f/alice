@@ -1,0 +1,27 @@
+name: alice-hns-wallet
+
+services:
+  handshake-wallet:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: alice-hns-wallet:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      TRUST_PROXY: "true"
+      APP_URL: ${APP_URL}
+      DATABASE_URL: /app/data/wallet.sqlite
+      HSD_NODE_URL: ${HSD_NODE_URL}
+      HSD_NODE_API_KEY: ${HSD_NODE_API_KEY}
+      HSD_WALLET_URL: ${HSD_WALLET_URL}
+      HSD_WALLET_API_KEY: ${HSD_WALLET_API_KEY}
+      HSD_WALLET_ID: ${HSD_WALLET_ID}
+      HSD_NETWORK: ${HSD_NETWORK:-main}
+      SESSION_SECRET: ${SESSION_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    volumes:
+      - ./data:/app/data
