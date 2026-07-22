@@ -7,6 +7,7 @@ import {
 import { Hono } from "hono";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
+import { auditLog } from "../middleware/audit.js";
 import { rateLimit } from "../middleware/rate-limit.js";
 import { requireReauth } from "../middleware/reauth.js";
 import {
@@ -133,7 +134,7 @@ export function createAuthRoutes(db: Db, env: Env) {
     return c.body(null, 204);
   });
 
-  app.post("/auth/logout-all", requireAuth(), (c) => {
+  app.post("/auth/logout-all", auditLog(db, env, "auth.logout_all"), requireAuth(), (c) => {
     deleteAllSessions(db);
     clearSessionCookie(c);
     return c.body(null, 204);
@@ -215,15 +216,20 @@ export function createAuthRoutes(db: Db, env: Env) {
     }
   });
 
-  app.post("/auth/totp/disable", requireReauth(), (c) => {
+  app.post("/auth/totp/disable", auditLog(db, env, "auth.totp_disable"), requireReauth(), (c) => {
     disableTotp(db);
     return c.body(null, 204);
   });
 
-  app.post("/auth/recovery/regen", requireReauth(), async (c) => {
-    const recoveryCodesList = await regenerateRecoveryCodes(db);
-    return c.json({ recoveryCodes: recoveryCodesList });
-  });
+  app.post(
+    "/auth/recovery/regen",
+    auditLog(db, env, "auth.recovery_regen"),
+    requireReauth(),
+    async (c) => {
+      const recoveryCodesList = await regenerateRecoveryCodes(db);
+      return c.json({ recoveryCodes: recoveryCodesList });
+    },
+  );
 
   return app;
 }

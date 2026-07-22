@@ -2,6 +2,7 @@ import { connectionConfigSchema } from "@alice-hns-wallet/schemas";
 import { Hono } from "hono";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
+import { auditLog } from "../middleware/audit.js";
 import { requireReauth } from "../middleware/reauth.js";
 import { requireAuth } from "../middleware/session.js";
 import {
@@ -32,7 +33,7 @@ export function createConnectionRoutes(db: Db, env: Env, hsdManager: HsdConnecti
   });
 
   /** Spec §8.3: every check must pass before the new connection is saved and applied. */
-  app.put("/connection", requireReauth(), async (c) => {
+  app.put("/connection", auditLog(db, env, "connection.update"), requireReauth(), async (c) => {
     const parsed = connectionConfigSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: "Invalid request" }, 400);

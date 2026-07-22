@@ -36,6 +36,13 @@
       "when": 1784723643201,
       "tag": "0004_nervous_silver_centurion",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784726938080,
+      "tag": "0005_curious_freak",
+      "breakpoints": true
     }
   ]
 }

@@ -112,6 +112,10 @@ body {
   font-size: 0.875rem;
 }
 
+.error-text {
+  color: #991b1b;
+}
+
 .dashboard {
   max-width: 640px;
   margin: 0 auto;

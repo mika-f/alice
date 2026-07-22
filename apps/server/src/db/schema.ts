@@ -139,3 +139,39 @@ export const notifications = sqliteTable("notifications", {
     .default(sql`(unixepoch())`),
   readAt: integer("read_at", { mode: "timestamp" }),
 });
+
+/**
+ * Records every write operation (spec Phase 5 "監査ログ"). `detail` is always a short, pre-built
+ * human message (an hsd error message or a txid) — never a raw request body, so a mnemonic or
+ * password can never end up here even by accident.
+ */
+export const auditLog = sqliteTable("audit_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  action: text("action").notNull(),
+  target: text("target"),
+  outcome: text("outcome").notNull(),
+  detail: text("detail"),
+  ip: text("ip"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** Txids broadcast by this app, watched until confirmed/dropped so the poller can notify once (spec §20.1). */
+export const watchedBroadcasts = sqliteTable("watched_broadcasts", {
+  txid: text("txid").primaryKey(),
+  label: text("label"),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+/** Web Push subscriptions (spec Phase 5). One browser can hold several (different devices). */
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});

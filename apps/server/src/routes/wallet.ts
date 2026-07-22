@@ -9,6 +9,7 @@ import {
 import { Hono } from "hono";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
+import { auditLog } from "../middleware/audit.js";
 import { rateLimit } from "../middleware/rate-limit.js";
 import { requireReauth } from "../middleware/reauth.js";
 import { requireAuth } from "../middleware/session.js";
@@ -130,49 +131,67 @@ export function createWalletRoutes(db: Db, env: Env, hsdManager: HsdConnectionMa
   });
 
   /** Spec §7.4 + §12.4: HNS sends require a fresh reauth and are never auto-retried. */
-  app.post("/wallet/send", requireReauth(), sendLimiter, async (c) => {
-    const parsed = sendRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/wallet/send",
+    auditLog(db, env, "wallet.send"),
+    requireReauth(),
+    sendLimiter,
+    async (c) => {
+      const parsed = sendRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await send(db, hsdManager.get(), {
-      address: parsed.data.address,
-      amount: BigInt(parsed.data.amount),
-      feeRate: parsed.data.feeRate,
-      label: parsed.data.label,
-      memo: parsed.data.memo,
-      idempotencyKey: parsed.data.idempotencyKey,
-    });
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await send(db, hsdManager.get(), {
+        address: parsed.data.address,
+        amount: BigInt(parsed.data.amount),
+        feeRate: parsed.data.feeRate,
+        label: parsed.data.label,
+        memo: parsed.data.memo,
+        idempotencyKey: parsed.data.idempotencyKey,
+      });
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
-  app.post("/wallet/lock", requireAuth(), async (c) => {
+  app.post("/wallet/lock", auditLog(db, env, "wallet.lock"), requireAuth(), async (c) => {
     await lockWallet(hsdManager.get());
     return c.body(null, 204);
   });
 
-  app.post("/wallet/unlock", requireAuth(), unlockLimiter, async (c) => {
-    const parsed = unlockRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/wallet/unlock",
+    auditLog(db, env, "wallet.unlock"),
+    requireAuth(),
+    unlockLimiter,
+    async (c) => {
+      const parsed = unlockRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    try {
-      await unlockWallet(hsdManager.get(), parsed.data.passphrase, parsed.data.timeoutSeconds);
-    } catch {
-      return c.json({ error: "Invalid passphrase" }, 401);
-    }
-    return c.body(null, 204);
-  });
+      try {
+        await unlockWallet(hsdManager.get(), parsed.data.passphrase, parsed.data.timeoutSeconds);
+      } catch {
+        return c.json({ error: "Invalid passphrase" }, 401);
+      }
+      return c.body(null, 204);
+    },
+  );
 
   /** Spec §7.4: importing a wallet requires a fresh reauth. */
-  app.post("/wallet/import/mnemonic", requireReauth(), importLimiter, async (c) => {
-    const parsed = mnemonicImportRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/wallet/import/mnemonic",
+    auditLog(db, env, "wallet.import_mnemonic"),
+    requireReauth(),
+    importLimiter,
+    async (c) => {
+      const parsed = mnemonicImportRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    await importMnemonic(hsdManager.get(), parsed.data);
-    return c.body(null, 204);
-  });
+      await importMnemonic(hsdManager.get(), parsed.data);
+      return c.body(null, 204);
+    },
+  );
 
   return app;
 }

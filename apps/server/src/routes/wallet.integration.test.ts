@@ -279,6 +279,45 @@ describe.skipIf(!available)("wallet routes against a live regtest hsd", () => {
     expect([200, 204, 401]).toContain(unlockRes.status);
   });
 
+  it("records both a rejected and a successful send in the audit log", async () => {
+    const app = buildApp();
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    // Stale reauth: this attempt is rejected downstream by requireReauth(), but the
+    // audit middleware runs first and must still record the attempt as a failure.
+    db.run(sql`UPDATE sessions SET reauth_at = NULL`);
+    const rejected = await req(app, jar, "POST", "/api/wallet/send", csrf, {
+      address: "rs1qdoesnotmatter",
+      amount: "1",
+      idempotencyKey: randomUUID(),
+    });
+    expect(rejected.status).toBe(403);
+
+    // Re-establish reauth (setup already satisfied the password factor once) and send for real.
+    db.run(sql`UPDATE sessions SET reauth_at = unixepoch()`);
+    const receive = await readJson<{ address: string }>(
+      await req(app, jar, "POST", "/api/wallet/receive-address", csrf),
+    );
+    await nodeRpc("generatetoaddress", [20, receive.address]);
+    const destination = await readJson<{ address: string }>(
+      await req(app, jar, "POST", "/api/wallet/receive-address", csrf),
+    );
+    const sendRes = await req(app, jar, "POST", "/api/wallet/send", csrf, {
+      address: destination.address,
+      amount: "50000000",
+      feeRate: 10_000,
+      idempotencyKey: randomUUID(),
+    });
+    expect(sendRes.status).toBe(200);
+
+    const auditRes = await app.request("/api/audit-log", { headers: { cookie: jar.header() } });
+    const entries = await readJson<{ action: string; outcome: string }[]>(auditRes);
+    const sendEntries = entries.filter((e) => e.action === "wallet.send");
+    expect(sendEntries.some((e) => e.outcome === "failure")).toBe(true);
+    expect(sendEntries.some((e) => e.outcome === "success")).toBe(true);
+  });
+
   it("imports a wallet from a mnemonic", async () => {
     const app = buildApp();
     const jar = cookieJar();

@@ -213,6 +213,8 @@ function DashboardPage() {
 
           <p>
             <Link to="/settings/connection">Connection settings</Link>
+            {" · "}
+            <Link to="/settings/audit-log">Audit log</Link>
           </p>
         </>
       )}

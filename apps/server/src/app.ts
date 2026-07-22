@@ -6,6 +6,7 @@ import { ensureCsrfCookie, verifyCsrf } from "./middleware/csrf.js";
 import { requireHttps } from "./middleware/require-https.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import { attachSession } from "./middleware/session.js";
+import { createAuditRoutes } from "./routes/audit.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createConnectionRoutes } from "./routes/connection.js";
 import { healthRoute } from "./routes/health.js";
@@ -57,6 +58,7 @@ export function createApp(
   app.route("/api", createWalletRoutes(db, env, hsdManager));
   app.route("/api", createNameRoutes(db, env, hsdManager));
   app.route("/api", createNotificationRoutes(db));
+  app.route("/api", createAuditRoutes(db));
 
   mountStaticWeb(app);
 

@@ -1,4 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
+import { auditLogRoute } from "./routes/settings.audit-log.js";
 import { connectionSettingsRoute } from "./routes/settings.connection.js";
 import { dashboardRoute } from "./routes/dashboard.js";
 import { importWalletRoute } from "./routes/settings.import-wallet.js";
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   nameRevokeRoute,
   notificationsRoute,
   notificationSettingsRoute,
+  auditLogRoute,
 ]);
 
 export const router = createRouter({ routeTree });

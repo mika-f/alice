@@ -9,6 +9,7 @@ import type {
   TransferNameRequest,
   TransactionPage,
   TransactionQuery,
+  TransactionRecord,
   UpdateNameRequest,
   UpdatePreviewResult,
   WalletBalance,
@@ -19,6 +20,8 @@ export interface HandshakeWalletClient {
   getWalletStatus(): Promise<WalletStatus>;
   getBalance(): Promise<WalletBalance>;
   getTransactions(query: TransactionQuery): Promise<TransactionPage>;
+  /** Single-tx lookup for watched-broadcast confirmation tracking; null when hsd no longer knows the txid (dropped/replaced). */
+  getTransaction(txid: string): Promise<TransactionRecord | null>;
   getReceiveAddress(): Promise<ReceiveAddress>;
   send(request: SendRequest): Promise<BroadcastResult>;
   /** Builds and estimates fee for the same request without broadcasting. */

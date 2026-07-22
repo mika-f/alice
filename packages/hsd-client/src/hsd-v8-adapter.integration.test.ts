@@ -122,6 +122,33 @@ describe.skipIf(!available)("HsdV8Adapter against a live regtest hsd", () => {
     expect(history.items.some((tx) => tx.txid === sent.txid)).toBe(true);
   });
 
+  it("reads a single transaction by txid, before and after confirmation, and returns null for an unknown txid", async () => {
+    const client = adapter();
+    const receiveAddr = await client.getReceiveAddress();
+    await mineTo(receiveAddr.address, 20);
+
+    const destination = await client.getReceiveAddress();
+    const sent = await client.send({
+      address: destination.address,
+      amount: 50_000_000n,
+      feeRate: 10_000,
+      idempotencyKey: randomUUID(),
+    });
+
+    const unconfirmed = await client.getTransaction(sent.txid);
+    expect(unconfirmed?.txid).toBe(sent.txid);
+    expect(unconfirmed?.confirmations).toBe(0);
+
+    await mineTo(receiveAddr.address, 1);
+    const confirmed = await client.getTransaction(sent.txid);
+    expect(confirmed?.confirmations).toBeGreaterThan(0);
+
+    const unknown = await client.getTransaction(
+      "0".repeat(63) + "1", // well-formed but never-broadcast txid
+    );
+    expect(unknown).toBeNull();
+  });
+
   it("paginates history with a cursor", async () => {
     const client = adapter();
     const firstPage = await client.getTransactions({ limit: 2 });

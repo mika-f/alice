@@ -11,6 +11,7 @@ import {
   type SendRequest,
   type TransactionPage,
   type TransactionQuery,
+  type TransactionRecord,
   type TransferNameRequest,
   type UpdateNameRequest,
   type UpdatePreviewResult,
@@ -213,6 +214,18 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     const items = raw.map(toTransactionRecord);
     const nextCursor = raw.length === limit ? (raw[raw.length - 1]?.hash ?? null) : null;
     return { items, nextCursor };
+  }
+
+  async getTransaction(txid: string): Promise<TransactionRecord | null> {
+    try {
+      const raw = rawTxSchema.parse(await this.wallet.get(`/wallet/${this.walletId}/tx/${txid}`));
+      return toTransactionRecord(raw);
+    } catch (error) {
+      if (error instanceof HsdHttpError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async lock(): Promise<void> {

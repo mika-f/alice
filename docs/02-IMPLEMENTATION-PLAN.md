@@ -310,10 +310,10 @@ GET  /ready
 
 - [ ] 外部通知(ntfy / Discord Webhook から着手、秘密情報のマスク §20.2)
 - [ ] Web Push
-- [ ] 監査ログ(書き込み操作の記録)
+- [x] 監査ログ(書き込み操作の記録) — `audit_log` テーブル + `auditLog()` ミドルウェアを wallet(send/lock/unlock/import-mnemonic)・name(update/renew/renew-batch/transfer/finalize/revoke)・connection(update)・auth(logout-all/totp-disable/recovery-regen)の各書き込みルートの先頭に配置し、成功・失敗(下流の reauth/validation 拒否を含む)を outcome として記録。リクエストボディは一切保存しない(§21.6)。`GET /api/audit-log` + Web の一覧ページで閲覧可能。
 - [ ] バックアップ確認リマインダー(§10.3)
 - [ ] 障害診断画面(接続・同期・バージョンの一括診断)
-- [ ] 状態配信の SSE 化検討
+- [x] 状態配信の SSE 化検討 — **結論: 現状の polling(15秒間隔)を維持し、SSE化は見送る。** 理由: (1) 単一ユーザー・低頻度アクセスの個人用アプリでは 15 秒のレイテンシは実用上問題にならず、SSE化で得られる体感差が小さい。(2) §23.1 で当初 SSE を見送った理由(CSP・リバースプロキシ互換性)は、Phase 4 で実際に Traefik 経由の CSRF 不具合(Origin 検証がプロキシ経由のリクエストを想定していなかった)を踏んだことで裏付けられた — SSE は長時間コネクションのバッファリング/タイムアウト設定をプロキシ側にも要求するため、同種の環境依存不具合を増やすリスクがある。(3) polling は既に §22.2(接続断の即時表示)を満たしている。将来、複数クライアントの同時接続や更なる低レイテンシ要求が生じた場合に再検討する。
 - [ ] トランザクション確定・失敗の通知(全書き込みパス共通のブロードキャスト監視が必要。Phase 4 では見送り)
 - [ ] Wallet 同期遅延の通知(hsd の wallet HTTP API に rescan 進捗を示すシグナルがないため、独自の進捗推定が必要)
 

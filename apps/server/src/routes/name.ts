@@ -18,6 +18,7 @@ import {
 import { Hono } from "hono";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
+import { auditLog } from "../middleware/audit.js";
 import { rateLimit } from "../middleware/rate-limit.js";
 import { requireReauth } from "../middleware/reauth.js";
 import { requireAuth } from "../middleware/session.js";
@@ -146,41 +147,59 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
   });
 
   /** Spec §7.4: DNS updates require a fresh reauth. */
-  app.post("/names/:name/update", requireReauth(), updateLimiter, async (c) => {
-    const parsed = updateNameRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/names/:name/update",
+    auditLog(db, env, "name.update", (c) => c.req.param("name")),
+    requireReauth(),
+    updateLimiter,
+    async (c) => {
+      const parsed = updateNameRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    const issues = validateResource(parsed.data.records);
-    if (issues.length > 0) return c.json({ error: "Invalid resource", issues }, 400);
+      const issues = validateResource(parsed.data.records);
+      if (issues.length > 0) return c.json({ error: "Invalid resource", issues }, 400);
 
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await updateName(hsdManager.get(), c.req.param("name"), parsed.data.records);
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await updateName(hsdManager.get(), c.req.param("name"), parsed.data.records);
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
   app.post("/names/:name/renew/preview", requireAuth(), previewLimiter, async (c) => {
     const result = await previewRenewName(hsdManager.get(), c.req.param("name"));
     return c.json(serializeBroadcastResult(result));
   });
 
-  app.post("/names/:name/renew", requireReauth(), renewLimiter, async (c) => {
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+  app.post(
+    "/names/:name/renew",
+    auditLog(db, env, "name.renew", (c) => c.req.param("name")),
+    requireReauth(),
+    renewLimiter,
+    async (c) => {
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await renewName(hsdManager.get(), c.req.param("name"));
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await renewName(hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
   /** Spec §17.3: per-name success/failure/skip, never an opaque all-or-nothing batch. */
-  app.post("/names/renew-batch", requireReauth(), renewBatchLimiter, async (c) => {
-    const parsed = renewNamesBatchRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/names/renew-batch",
+    auditLog(db, env, "name.renew_batch"),
+    requireReauth(),
+    renewBatchLimiter,
+    async (c) => {
+      const parsed = renewNamesBatchRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    const results = await renewNamesBatch(db, hsdManager.get(), parsed.data.names);
-    return c.json(serializeActionResults(results));
-  });
+      const results = await renewNamesBatch(db, hsdManager.get(), parsed.data.names);
+      return c.json(serializeActionResults(results));
+    },
+  );
 
   app.post("/names/:name/transfer/preview", requireAuth(), previewLimiter, async (c) => {
     const parsed = transferNameRequestSchema.safeParse(await c.req.json().catch(() => null));
@@ -194,63 +213,81 @@ export function createNameRoutes(db: Db, env: Env, hsdManager: HsdConnectionMana
     return c.json(serializeBroadcastResult(result));
   });
 
-  app.post("/names/:name/transfer", requireReauth(), transferLimiter, async (c) => {
-    const parsed = transferNameRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/names/:name/transfer",
+    auditLog(db, env, "name.transfer", (c) => c.req.param("name")),
+    requireReauth(),
+    transferLimiter,
+    async (c) => {
+      const parsed = transferNameRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await transferName(hsdManager.get(), c.req.param("name"), parsed.data.address);
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await transferName(hsdManager.get(), c.req.param("name"), parsed.data.address);
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
   app.post("/names/:name/finalize/preview", requireAuth(), previewLimiter, async (c) => {
     const result = await previewFinalizeName(hsdManager.get(), c.req.param("name"));
     return c.json(serializeBroadcastResult(result));
   });
 
-  app.post("/names/:name/finalize", requireReauth(), finalizeLimiter, async (c) => {
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+  app.post(
+    "/names/:name/finalize",
+    auditLog(db, env, "name.finalize", (c) => c.req.param("name")),
+    requireReauth(),
+    finalizeLimiter,
+    async (c) => {
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await finalizeName(hsdManager.get(), c.req.param("name"));
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await finalizeName(hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
   /**
    * Spec §19.2: revoke is irreversible, so it demands both a fresh password AND a fresh TOTP (or
    * recovery) code in the same request — stricter than the general single-factor reauth every
    * other write here uses. TOTP must already be enabled; there's no factor to check otherwise.
    */
-  app.post("/names/:name/revoke", requireReauth(), revokeLimiter, async (c) => {
-    const parsed = revokeNameRequestSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+  app.post(
+    "/names/:name/revoke",
+    auditLog(db, env, "name.revoke", (c) => c.req.param("name")),
+    requireReauth(),
+    revokeLimiter,
+    async (c) => {
+      const parsed = revokeNameRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
 
-    const record = getAdmin(db);
-    if (!record) return c.json({ error: "Admin account does not exist" }, 500);
-    if (!record.totpEnabled) {
-      return c.json({ error: "TOTP must be enabled to revoke a name" }, 403);
-    }
+      const record = getAdmin(db);
+      if (!record) return c.json({ error: "Admin account does not exist" }, 500);
+      if (!record.totpEnabled) {
+        return c.json({ error: "TOTP must be enabled to revoke a name" }, 403);
+      }
 
-    const passwordValid =
-      (await verifyCredentials(db, {
-        username: record.username,
-        password: parsed.data.password,
-      })) !== null;
-    if (!passwordValid) return c.json({ error: "Invalid password" }, 401);
+      const passwordValid =
+        (await verifyCredentials(db, {
+          username: record.username,
+          password: parsed.data.password,
+        })) !== null;
+      if (!passwordValid) return c.json({ error: "Invalid password" }, 401);
 
-    const codeValid =
-      verifyTotpCode(db, env.ENCRYPTION_KEY, parsed.data.code) ||
-      (await verifyAndConsumeRecoveryCode(db, parsed.data.code));
-    if (!codeValid) return c.json({ error: "Invalid TOTP code" }, 401);
+      const codeValid =
+        verifyTotpCode(db, env.ENCRYPTION_KEY, parsed.data.code) ||
+        (await verifyAndConsumeRecoveryCode(db, parsed.data.code));
+      if (!codeValid) return c.json({ error: "Invalid TOTP code" }, 401);
 
-    const status = await getWalletStatus(hsdManager.get());
-    if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+      const status = await getWalletStatus(hsdManager.get());
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
-    const result = await revokeName(hsdManager.get(), c.req.param("name"));
-    return c.json(serializeBroadcastResult(result));
-  });
+      const result = await revokeName(hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
 
   return app;
 }

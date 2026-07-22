@@ -18,16 +18,19 @@ describe("runMigrations", () => {
     expect(tables).toEqual([
       "addresses",
       "admin",
+      "audit_log",
       "connections",
       "login_attempts",
       "name_cache",
       "name_meta",
       "notifications",
+      "push_subscriptions",
       "recovery_codes",
       "send_idempotency",
       "sessions",
       "settings",
       "tx_meta",
+      "watched_broadcasts",
     ]);
   });
 });
