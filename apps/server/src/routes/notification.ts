@@ -1,6 +1,7 @@
 import {
   externalNotificationSettingsRequestSchema,
   renewalThresholdsRequestSchema,
+  revealThresholdsRequestSchema,
 } from "@alice-hns-wallet/schemas";
 import { Hono } from "hono";
 import type { Db } from "../db/client.js";
@@ -15,9 +16,11 @@ import {
 } from "../services/external-notification-service.js";
 import {
   getRenewalThresholds,
+  getRevealThresholds,
   listNotifications,
   markNotificationRead,
   setRenewalThresholds,
+  setRevealThresholds,
 } from "../services/notification-service.js";
 import type { AppEnv } from "../types.js";
 
@@ -43,6 +46,17 @@ export function createNotificationRoutes(db: Db, env: Env) {
     const parsed = renewalThresholdsRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
     setRenewalThresholds(db, parsed.data);
+    return c.body(null, 204);
+  });
+
+  app.get("/settings/reveal-thresholds", requireAuth(), (c) => {
+    return c.json(getRevealThresholds(db));
+  });
+
+  app.put("/settings/reveal-thresholds", requireAuth(), async (c) => {
+    const parsed = revealThresholdsRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+    setRevealThresholds(db, parsed.data);
     return c.body(null, 204);
   });
 

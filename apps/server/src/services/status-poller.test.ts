@@ -1,4 +1,4 @@
-import type { OwnedName, TransactionRecord } from "@alice-hns-wallet/domain";
+import type { NameDetails, OwnedName, TransactionRecord } from "@alice-hns-wallet/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDb, type Db } from "../db/client.js";
 import { runMigrations } from "../db/migrate.js";
@@ -20,6 +20,9 @@ function fakeManager(
   }> = {},
   names: OwnedName[] = [],
   getTransaction: (txid: string) => Promise<TransactionRecord | null> = async () => null,
+  getName: (name: string) => Promise<NameDetails> = async () => {
+    throw new Error("getName not stubbed");
+  },
 ) {
   const adapter = {
     getStatus: vi.fn(async () => {
@@ -47,6 +50,7 @@ function fakeManager(
     }),
     getNames: vi.fn(async () => names),
     getTransaction: vi.fn(getTransaction),
+    getName: vi.fn(getName),
   };
   const manager = { get: () => adapter } as never;
   return { manager, adapter };
@@ -63,6 +67,19 @@ function ownedName(overrides: Partial<OwnedName> = {}): OwnedName {
     transferState: "none",
     resourceSummary: null,
     updatedAt: Date.now(),
+    ...overrides,
+  };
+}
+
+function nameDetails(overrides: Partial<NameDetails> = {}): NameDetails {
+  return {
+    ...ownedName(),
+    nameHash: "abcd",
+    ownerAddress: null,
+    blockHeight: 100,
+    resource: null,
+    bids: [],
+    reveals: [],
     ...overrides,
   };
 }
@@ -239,6 +256,77 @@ describe("StatusPoller", () => {
       expect(
         notifications.some((n) => n.type === "finalize-available" && n.name === "example"),
       ).toBe(true);
+    });
+
+    it("notifies reveal-deadline-approaching once a name with an own unrevealed bid enters the reveal window", async () => {
+      db = freshDb();
+      const { manager } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing", blocksRemaining: 10 })],
+        undefined,
+        async () => nameDetails({ bids: [{ value: 100n, lockup: 100n, height: 1, own: true }] }),
+      );
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      const notifications = listNotifications(db);
+      expect(
+        notifications.some((n) => n.type === "reveal-deadline-approaching" && n.name === "example"),
+      ).toBe(true);
+    });
+
+    it("does not notify reveal-deadline-approaching when this wallet has no bid on the name", async () => {
+      db = freshDb();
+      const { manager } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing", blocksRemaining: 10 })],
+        undefined,
+        async () => nameDetails({ bids: [] }),
+      );
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
+        false,
+      );
+    });
+
+    it("does not re-notify reveal-deadline-approaching on every tick while still revealing", async () => {
+      db = freshDb();
+      const { manager } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing", blocksRemaining: 10 })],
+        undefined,
+        async () => nameDetails({ bids: [{ value: 100n, lockup: 100n, height: 1, own: true }] }),
+      );
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+      await poller.refresh();
+      await poller.refresh();
+
+      expect(
+        listNotifications(db).filter((n) => n.type === "reveal-deadline-approaching"),
+      ).toHaveLength(1);
+    });
+
+    it("does not notify reveal-deadline-approaching once this wallet's bid has already been revealed", async () => {
+      db = freshDb();
+      const { manager } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            bids: [{ value: 100n, lockup: 100n, height: 1, own: true }],
+            reveals: [{ value: 100n, height: 2, own: true }],
+          }),
+      );
+      const poller = new StatusPoller(manager, db);
+      await poller.refresh();
+
+      expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
+        false,
+      );
     });
   });
 

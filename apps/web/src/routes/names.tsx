@@ -213,7 +213,12 @@ function NamesPage() {
     <main className="dashboard">
       <div className="dashboard-header">
         <h1>Names</h1>
-        <Link to="/">Back to dashboard</Link>
+        <div className="field-row page-actions">
+          <Link to="/names/open" className="button secondary">
+            Open a new Name
+          </Link>
+          <Link to="/">Back to dashboard</Link>
+        </div>
       </div>
 
       <div className="names-toolbar">

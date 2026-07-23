@@ -1,14 +1,16 @@
 import type {
   BroadcastResult,
   NameActionResult,
+  NameAvailability,
   NameBid,
   NameDetails,
   NameReveal,
   OwnedName,
   UpdatePreviewResult,
 } from "@alice-hns-wallet/domain";
-import { validateResource } from "@alice-hns-wallet/domain";
+import { validateBid, validateResource } from "@alice-hns-wallet/domain";
 import {
+  bidNameRequestSchema,
   nameMetaRequestSchema,
   renewNamesBatchRequestSchema,
   revokeNameRequestSchema,
@@ -26,16 +28,25 @@ import { getAdmin, verifyCredentials } from "../services/auth-service.js";
 import type { HsdConnectionManager } from "../services/hsd-connection-manager.js";
 import type { RescanTracker } from "../services/rescan-tracker.js";
 import {
+  bidName,
+  checkNameAvailability,
   finalizeName,
   getNameDetail,
   getNameResource,
   listNames,
+  openName,
+  previewBidName,
   previewFinalizeName,
+  previewOpenName,
+  previewRedeemName,
   previewRenewName,
+  previewRevealName,
   previewTransferName,
   previewUpdateName,
+  redeemName,
   renewName,
   renewNamesBatch,
+  revealName,
   revokeName,
   setNameMeta,
   transferName,
@@ -98,6 +109,15 @@ function serializeActionResults(results: NameActionResult[]) {
   return results.map((r) => ({ name: r.name, status: r.status, txid: r.txid, reason: r.reason }));
 }
 
+function serializeAvailability(result: NameAvailability) {
+  return {
+    name: result.name,
+    available: result.available,
+    reserved: result.reserved,
+    state: result.state,
+  };
+}
+
 export function createNameRoutes(
   db: Db,
   env: Env,
@@ -113,6 +133,11 @@ export function createNameRoutes(
   const transferLimiter = rateLimit({ windowMs: 60_000, max: 10, trustProxy: env.TRUST_PROXY });
   const finalizeLimiter = rateLimit({ windowMs: 60_000, max: 10, trustProxy: env.TRUST_PROXY });
   const revokeLimiter = rateLimit({ windowMs: 60_000, max: 5, trustProxy: env.TRUST_PROXY });
+  const availabilityLimiter = rateLimit({ windowMs: 60_000, max: 30, trustProxy: env.TRUST_PROXY });
+  const openLimiter = rateLimit({ windowMs: 60_000, max: 10, trustProxy: env.TRUST_PROXY });
+  const bidLimiter = rateLimit({ windowMs: 60_000, max: 20, trustProxy: env.TRUST_PROXY });
+  const revealLimiter = rateLimit({ windowMs: 60_000, max: 20, trustProxy: env.TRUST_PROXY });
+  const redeemLimiter = rateLimit({ windowMs: 60_000, max: 20, trustProxy: env.TRUST_PROXY });
 
   app.get("/names", requireAuth(), async (c) => {
     const names = await listNames(db, hsdManager.get());
@@ -261,6 +286,114 @@ export function createNameRoutes(
       if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
 
       const result = await finalizeName(db, hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
+
+  /** Spec §27.1: works for names this wallet has never seen — no wallet-locked/reauth gating, it's a read. */
+  app.get("/names/:name/availability", requireAuth(), availabilityLimiter, async (c) => {
+    const result = await checkNameAvailability(hsdManager.get(), c.req.param("name"));
+    return c.json(serializeAvailability(result));
+  });
+
+  app.post("/names/:name/open/preview", requireAuth(), previewLimiter, async (c) => {
+    const result = await previewOpenName(hsdManager.get(), c.req.param("name"));
+    return c.json(serializeBroadcastResult(result));
+  });
+
+  app.post(
+    "/names/:name/open",
+    auditLog(db, env, "name.open", (c) => c.req.param("name")),
+    requireReauth(),
+    openLimiter,
+    async (c) => {
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+
+      const result = await openName(db, hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
+
+  app.post("/names/:name/bid/preview", requireAuth(), previewLimiter, async (c) => {
+    const parsed = bidNameRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+
+    const bid = BigInt(parsed.data.bid);
+    const lockup = BigInt(parsed.data.lockup);
+    const issues = validateBid({ bid, lockup });
+    if (issues.length > 0) return c.json({ error: "Invalid bid", issues }, 400);
+
+    const result = await previewBidName(hsdManager.get(), {
+      name: c.req.param("name"),
+      bid,
+      lockup,
+    });
+    return c.json(serializeBroadcastResult(result));
+  });
+
+  /** Spec §27.3: the lockup is fully locked until reveal — this is the single riskiest write in the app. */
+  app.post(
+    "/names/:name/bid",
+    auditLog(db, env, "name.bid", (c) => c.req.param("name")),
+    requireReauth(),
+    bidLimiter,
+    async (c) => {
+      const parsed = bidNameRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+
+      const bid = BigInt(parsed.data.bid);
+      const lockup = BigInt(parsed.data.lockup);
+      const issues = validateBid({ bid, lockup });
+      if (issues.length > 0) return c.json({ error: "Invalid bid", issues }, 400);
+
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+
+      const result = await bidName(db, hsdManager.get(), {
+        name: c.req.param("name"),
+        bid,
+        lockup,
+      });
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
+
+  app.post("/names/:name/reveal/preview", requireAuth(), previewLimiter, async (c) => {
+    const result = await previewRevealName(hsdManager.get(), c.req.param("name"));
+    return c.json(serializeBroadcastResult(result));
+  });
+
+  app.post(
+    "/names/:name/reveal",
+    auditLog(db, env, "name.reveal", (c) => c.req.param("name")),
+    requireReauth(),
+    revealLimiter,
+    async (c) => {
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+
+      const result = await revealName(db, hsdManager.get(), c.req.param("name"));
+      return c.json(serializeBroadcastResult(result));
+    },
+  );
+
+  app.post("/names/:name/redeem/preview", requireAuth(), previewLimiter, async (c) => {
+    const result = await previewRedeemName(hsdManager.get(), c.req.param("name"));
+    return c.json(serializeBroadcastResult(result));
+  });
+
+  /** Spec §27.5: hsd itself rejects redeeming a winning bid — no winner/loser detection here. */
+  app.post(
+    "/names/:name/redeem",
+    auditLog(db, env, "name.redeem", (c) => c.req.param("name")),
+    requireReauth(),
+    redeemLimiter,
+    async (c) => {
+      const status = await getWalletStatus(hsdManager.get(), rescanTracker);
+      if (status.locked) return c.json({ error: "Wallet is locked" }, 409);
+
+      const result = await redeemName(db, hsdManager.get(), c.req.param("name"));
       return c.json(serializeBroadcastResult(result));
     },
   );

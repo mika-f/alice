@@ -470,6 +470,132 @@ describe.skipIf(!available)("HsdV8Adapter against a live regtest hsd", () => {
     }, 30_000);
   });
 
+  describe("Phase 6: name auction writes", () => {
+    async function retry<T>(
+      addr: string,
+      fn: () => Promise<T>,
+      tries: number,
+      mineEach = 2,
+    ): Promise<T> {
+      let lastError: unknown;
+      for (let i = 0; i < tries; i++) {
+        try {
+          return await fn();
+        } catch (error) {
+          lastError = error;
+          await mineTo(addr, mineEach);
+        }
+      }
+      throw lastError;
+    }
+
+    async function freshWallet(): Promise<{
+      walletId: string;
+      client: HsdV8Adapter;
+      addr: string;
+    }> {
+      const walletId = `p6-${randomUUID().slice(0, 8)}`;
+      await fetch(`${WALLET_URL}/wallet/${walletId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`:${API_KEY}`).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const client = adapter(walletId);
+      const addr = (await client.getReceiveAddress()).address;
+      await mineTo(addr, 20);
+      return { walletId, client, addr };
+    }
+
+    it("reports a never-opened name as available and not reserved", async () => {
+      const name = `alicep6avail${randomUUID().slice(0, 8)}`;
+      const availability = await adapter().getNameAvailability(name);
+      expect(availability).toEqual({ name, available: true, reserved: false, state: null });
+    });
+
+    it("runs OPEN -> BID -> REVEAL -> REGISTER through the adapter's own methods end to end", async () => {
+      const { client, addr } = await freshWallet();
+      const name = `alicep6full${randomUUID().slice(0, 8)}`;
+
+      const openPreview = await client.previewOpenName(name);
+      expect(openPreview.fee).toBeGreaterThan(0n);
+      const openResult = await retry(addr, () => client.openName(name), 5, 3);
+      expect(openResult.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 8);
+
+      const midAuction = await client.getNameAvailability(name);
+      expect(midAuction.available).toBe(false);
+      expect(midAuction.state).toBe("bidding");
+
+      const bidPreview = await client.previewBidName({ name, bid: 500_000n, lockup: 600_000n });
+      expect(bidPreview.fee).toBeGreaterThan(0n);
+      await retry(addr, () => client.bidName({ name, bid: 500_000n, lockup: 600_000n }), 8, 3);
+      await mineTo(addr, 8);
+
+      const revealPreview = await client.previewRevealName(name);
+      expect(revealPreview.fee).toBeGreaterThan(0n);
+      const revealResult = await retry(addr, () => client.revealName(name), 8, 3);
+      expect(revealResult.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 8);
+
+      const closed = await client.getName(name);
+      expect(closed.state).toBe("closed");
+      expect(closed.reveals.some((r) => r.own)).toBe(true);
+
+      const registerResult = await retry(
+        addr,
+        () => client.updateName({ name, records: [] }),
+        8,
+        3,
+      );
+      expect(registerResult.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 3);
+
+      const registered = await client.getName(name);
+      expect(registered.state).toBe("owned");
+      expect(registered.owned).toBe(true);
+    }, 60_000);
+
+    it("lets a losing bidder REDEEM their lockup back, and rejects the winner's own redeem attempt", async () => {
+      const winner = await freshWallet();
+      const loser = await freshWallet();
+      const name = `alicep6redeem${randomUUID().slice(0, 8)}`;
+
+      await retry(winner.addr, () => winner.client.openName(name), 5, 3);
+      await mineTo(winner.addr, 8);
+
+      await retry(
+        winner.addr,
+        () => winner.client.bidName({ name, bid: 900_000n, lockup: 1_000_000n }),
+        8,
+        3,
+      );
+      await retry(
+        loser.addr,
+        () => loser.client.bidName({ name, bid: 100_000n, lockup: 200_000n }),
+        8,
+        3,
+      );
+      await mineTo(winner.addr, 8);
+
+      await retry(winner.addr, () => winner.client.revealName(name), 8, 3);
+      await retry(loser.addr, () => loser.client.revealName(name), 8, 3);
+      await mineTo(winner.addr, 8);
+
+      const closed = await winner.client.getName(name);
+      expect(closed.state).toBe("closed");
+
+      const redeemPreview = await loser.client.previewRedeemName(name);
+      expect(redeemPreview.fee).toBeGreaterThan(0n);
+      const redeemResult = await retry(loser.addr, () => loser.client.redeemName(name), 8, 3);
+      expect(redeemResult.txid).toMatch(/^[0-9a-f]{64}$/);
+
+      await expect(winner.client.previewRedeemName(name)).rejects.toThrow();
+    }, 60_000);
+  });
+
   // Must run last — hsd's wallet gets confused building new transactions while a background
   // rescan it triggered is still catching up (see the Phase 3 name-lifecycle test above).
   it("rescans without touching chain height", async () => {

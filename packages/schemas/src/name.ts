@@ -58,3 +58,11 @@ export const revokeNameRequestSchema = z.object({
 });
 
 export type RevokeNameRequestBody = z.infer<typeof revokeNameRequestSchema>;
+
+/** Spec §27.3: dust-unit decimal strings, converted from HNS with parseHnsToSmallestUnit on the client. */
+export const bidNameRequestSchema = z.object({
+  bid: z.string().min(1),
+  lockup: z.string().min(1),
+});
+
+export type BidNameRequestBody = z.infer<typeof bidNameRequestSchema>;

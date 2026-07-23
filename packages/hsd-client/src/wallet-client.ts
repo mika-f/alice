@@ -1,7 +1,9 @@
 import type {
+  BidNameRequest,
   BroadcastResult,
   MnemonicImportInput,
   NameActionResult,
+  NameAvailability,
   NameDetails,
   OwnedName,
   ReceiveAddress,
@@ -44,4 +46,14 @@ export interface HandshakeWalletClient {
   previewFinalizeName(name: string): Promise<BroadcastResult>;
   finalizeName(name: string): Promise<BroadcastResult>;
   revokeName(name: string): Promise<BroadcastResult>;
+  /** Node-side lookup (spec §27.1) for a name this wallet may never have opened — not a wallet call. */
+  getNameAvailability(name: string): Promise<NameAvailability>;
+  previewOpenName(name: string): Promise<BroadcastResult>;
+  openName(name: string): Promise<BroadcastResult>;
+  previewBidName(request: BidNameRequest): Promise<BroadcastResult>;
+  bidName(request: BidNameRequest): Promise<BroadcastResult>;
+  previewRevealName(name: string): Promise<BroadcastResult>;
+  revealName(name: string): Promise<BroadcastResult>;
+  previewRedeemName(name: string): Promise<BroadcastResult>;
+  redeemName(name: string): Promise<BroadcastResult>;
 }

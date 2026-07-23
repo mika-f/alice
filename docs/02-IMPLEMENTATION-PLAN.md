@@ -113,6 +113,8 @@ hsd 8.x の利用 API(いずれも REST、一部 RPC):
 | Resource                     | `rpc getnameresource` / `POST /wallet/:id/update`       |
 | Renewal                      | `POST /wallet/:id/renewal`                              |
 | Transfer / Finalize / Revoke | `POST /wallet/:id/transfer` / `/finalize` / `/revoke`   |
+| Open / Bid / Reveal / Redeem | `POST /wallet/:id/open` / `/bid` / `/reveal` / `/redeem` |
+| Name 利用可否                | node 側 `rpc getnameinfo`                               |
 | Unlock / Lock                | `POST /wallet/:id/unlock`, `POST /wallet/:id/lock`      |
 | Mnemonic 復元                | `PUT /wallet/:id` (mnemonic 指定) + `POST /rescan`      |
 
@@ -197,11 +199,21 @@ POST /api/names/:name/transfer  🔐
 POST /api/names/:name/finalize  🔐
 POST /api/names/:name/revoke    🔐 (パスワード + TOTP 両方 §19.2)
 PUT  /api/names/:name/meta      ラベル・メモ
+GET  /api/names/:name/availability          hsd getnameinfo 経由 (§27.1)
+POST /api/names/:name/open      🔐
+POST /api/names/:name/open/preview
+POST /api/names/:name/bid       🔐
+POST /api/names/:name/bid/preview
+POST /api/names/:name/reveal    🔐
+POST /api/names/:name/reveal/preview
+POST /api/names/:name/redeem    🔐
+POST /api/names/:name/redeem/preview
+# Register は既存の /api/names/:name/update をそのまま流用(§27.6)
 
 # 通知
 GET  /api/notifications
 POST /api/notifications/:id/read
-PUT  /api/settings/notifications  しきい値設定 (§17.4)
+PUT  /api/settings/notifications  しきい値設定 (§17.4, §27.7)
 
 # ヘルスチェック(認証不要・情報最小 §22.4)
 GET  /health
@@ -316,6 +328,23 @@ GET  /ready
 - [x] 状態配信の SSE 化検討 — **結論: 現状の polling(15秒間隔)を維持し、SSE化は見送る。** 理由: (1) 単一ユーザー・低頻度アクセスの個人用アプリでは 15 秒のレイテンシは実用上問題にならず、SSE化で得られる体感差が小さい。(2) §23.1 で当初 SSE を見送った理由(CSP・リバースプロキシ互換性)は、Phase 4 で実際に Traefik 経由の CSRF 不具合(Origin 検証がプロキシ経由のリクエストを想定していなかった)を踏んだことで裏付けられた — SSE は長時間コネクションのバッファリング/タイムアウト設定をプロキシ側にも要求するため、同種の環境依存不具合を増やすリスクがある。(3) polling は既に §22.2(接続断の即時表示)を満たしている。将来、複数クライアントの同時接続や更なる低レイテンシ要求が生じた場合に再検討する。
 - [x] トランザクション確定・失敗の通知 — `watched_broadcasts` テーブルに全書き込みパス(send / update / renew / renew-batch / transfer / finalize / revoke)の txid を登録し、StatusPoller の毎 tick で `GET /wallet/:id/tx/:hash` により confirmations を確認。confirmations > 0 で `tx-confirmed` を通知して監視解除、10 分間見つからなければ `tx-failed`(ドロップ)として通知して監視解除。regtest 実機での send→mine→poll の一連の流れを統合テストで確認済み。
 - [x] Wallet 同期遅延の通知 — hsd の `POST /rescan` は完了までレスポンスを返さないため、`RescanTracker`(インメモリ)が呼び出し中かどうかをそのままアプリ側の rescanning 状態として使える。`getWalletStatus()`/`/api/status` の `rescanning` フィールドをこの実測値で上書き(旧: 常に `false`)。5 分を超えて rescan 中の場合、StatusPoller が `wallet-sync-delayed` を一度だけ通知。制約: 自前 HTTP クライアントの timeout より rescan が長引くとクライアント側で先にタイムアウトし、hsd 側は継続していても `inProgress` はリクエストと同時に解除される(hsd 自体に進捗シグナルがない以上、これ以上の精度は出せない)。
+
+### Phase 6: Name オークション(§27)
+
+初期版の非対応機能だった Open/Bid/Reveal/Redeem/Register を追加する。既存の Renewal/Transfer/Finalize/Revoke と同じ「preview → 再認証 → 実行」フローおよび `postCovenantOp`/`broadcastCovenantOp` Adapter パターンをそのまま踏襲し、新しい抽象は導入しない。
+
+- [x] regtest 実機での事前調査 — `POST /wallet/:id/{open,bid,reveal,redeem}`(`broadcast:false`/`true`)が既存の `rawCovenantPreviewSchema`/`rawCovenantBroadcastSchema` と同一シェイプであることを確認。node RPC `getnameinfo` のレスポンス(`{start:{reserved,week,start}, info: RawName | null}`)を確認 — `info` は既存の `rawNameSchema` と同一フィールド構成であることも確認済み。落札者による誤った Redeem 呼び出しは hsd が `"No reveals to redeem for name: X."` を返すことを確認(自前の勝敗判定は行わない方針を裏付け)。
+- [x] `packages/domain`: `BidNameRequest`、`validateBid`、`classifyReveal`(§27.7 のしきい値判定、`renewal.ts` と同型、`reveal.ts` として新設)。Open/Reveal/Redeem は既存の Renew/Finalize と同じく name 文字列のみで足りるため専用リクエスト型は作らず
+- [x] `packages/hsd-client`: Adapter に `openName`/`bidName`/`revealName`/`redeemName`(各 preview 込み)と `getNameAvailability`(node RPC `getnameinfo` 経由)を追加。新規スキーマは `rawNameInfoSchema` のみ
+- [x] `packages/schemas`: `bidNameRequestSchema`、`revealThresholdsRequestSchema` の zod スキーマ
+- [x] `apps/server`: `/api/names/:name/{open,bid,reveal,redeem}` (preview 込み) と `/api/names/:name/availability`、`/api/settings/reveal-thresholds` ルート、`name-service.ts` への対応関数追加、StatusPoller への Reveal 期限通知の追加(`reveal-deadline-approaching`、自ウォレットの未 Reveal Bid のみ対象)
+- [x] `apps/web`: `names.open.tsx`(Name 検索・Open)、`names.$name.bid.tsx`、`names.$name.reveal.tsx`、`names.$name.redeem.tsx`、既存 `names.$name.edit.tsx` の Register 対応、`names.$name.tsx` のアクションボタン拡充、`settings.notifications.tsx` への Reveal 期限しきい値フォーム追加
+- [x] regtest 統合テスト(OPEN→BID→REVEAL→REGISTER のハッピーパス、OPEN→BID→REVEAL→REDEEM の敗北パスを `hsd-v8-adapter.integration.test.ts` と `apps/server/src/routes/name.integration.test.ts` の両方に追加)
+- [x] ブラウザでの手動 E2E 確認(regtest 実機・実際の UI 操作) — Open→Bid→Reveal→Register を実際にクリック操作で完走し、途中で2件の実バグを検出・修正した:
+  1. `toUpdatePreviewResult`/`extractUpdateResourceHex`(name-mapper.ts)が `UPDATE` covenant のみを想定しており、closed かつ未登録の Name への初回登録時に hsd が返す `REGISTER` covenant(resource hex の位置は同じ items[2])で `Internal server error` になっていた。REGISTER も受理するよう修正(regtest 実機の Register 操作で初めて発覚 — 単体テストのモックデータだけでは再現しなかった)。
+  2. Register/Redeem ボタンの表示条件が `!detail.owned` を要求していたため、単独入札で auction に勝った直後(hsd は `state=CLOSED`・`owned=true` を REGISTER 前から返す)に Register ボタンが一切表示されなかった。`hsd はコインの所持で owned を判定し、`registered` フラグとは独立している」という事実に合わせて条件を反転(`detail.owned` を要求)し、あわせて既存の Actions カード(Renew/Transfer/Revoke)が同じ closed-未登録状態で誤って表示される問題も `detail.state !== "closed"` を追加して修正。
+
+**完了条件**: 受け入れ条件 21, 22 — 達成
 
 ---
 

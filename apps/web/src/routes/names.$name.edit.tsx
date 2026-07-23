@@ -209,6 +209,12 @@ function NameEditPage() {
     }
   }, [detailQuery.data, records]);
 
+  // hsd tracks ownership of the winning coin as soon as an auction closes, before the winner has
+  // ever called REGISTER — a "closed" state (rather than "owned") is what actually signals no
+  // REGISTER/UPDATE has landed yet; this page produces one automatically the first time. Same page
+  // as editing, different copy.
+  const isRegistering = detailQuery.data?.state === "closed" && detailQuery.data?.owned;
+
   const currentRecords = records ?? [];
   const issues = validateResource(currentRecords as DnsRecord[]);
   const deletingAll = isDeletingAllRecords(
@@ -283,7 +289,7 @@ function NameEditPage() {
     return (
       <main className="dashboard">
         <div className="dashboard-header">
-          <h1>DNS record updated</h1>
+          <h1>{isRegistering ? "Name registered" : "DNS record updated"}</h1>
           <Link to="/names/$name" params={{ name }}>
             Back to {name}
           </Link>
@@ -298,18 +304,28 @@ function NameEditPage() {
   return (
     <main className="dashboard">
       <div className="dashboard-header">
-        <h1>Edit DNS records: {name}</h1>
+        <h1>{isRegistering ? `Register ${name}` : `Edit DNS records: ${name}`}</h1>
         <Link to="/names/$name" params={{ name }}>
           Cancel
         </Link>
       </div>
+
+      {isRegistering && (
+        <p className="muted">
+          This name's auction has closed and it isn't registered yet. Submitting here — even with no
+          records — completes the registration; you can add DNS records now or later.
+        </p>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 
       {needsReauth && (
         <div className="card">
           <h1>Confirm your password</h1>
-          <p className="muted">Updating DNS records requires re-authentication.</p>
+          <p className="muted">
+            {isRegistering ? "Registering this name" : "Updating DNS records"} requires
+            re-authentication.
+          </p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -328,7 +344,7 @@ function NameEditPage() {
               />
             </div>
             <button type="submit" className="button" disabled={reauthMutation.isPending}>
-              Confirm and update
+              {isRegistering ? "Confirm and register" : "Confirm and update"}
             </button>
           </form>
         </div>
@@ -473,7 +489,13 @@ function NameEditPage() {
                 disabled={updateMutation.isPending}
                 onClick={() => updateMutation.mutate()}
               >
-                {updateMutation.isPending ? "Updating…" : "Confirm update"}
+                {updateMutation.isPending
+                  ? isRegistering
+                    ? "Registering…"
+                    : "Updating…"
+                  : isRegistering
+                    ? "Confirm registration"
+                    : "Confirm update"}
               </button>
             </div>
           </>

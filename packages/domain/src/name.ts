@@ -70,6 +70,46 @@ export interface TransferNameRequest {
   address: string;
 }
 
+export interface BidNameRequest {
+  name: string;
+  bid: bigint;
+  lockup: bigint;
+}
+
+/** hsd's node-side `getnameinfo` result for a name this wallet may never have opened. */
+export interface NameAvailability {
+  name: string;
+  /** True only when the name has never been opened and isn't ICANN-reserved. */
+  available: boolean;
+  /** ICANN root-zone reserved names can't be opened via a normal auction (spec §27.1). */
+  reserved: boolean;
+  /** Null when `available` — hsd has no auction record for the name at all. */
+  state: NameState | null;
+}
+
+export type BidValidationCode = "bid-not-positive" | "lockup-below-bid";
+
+export interface BidValidationIssue {
+  code: BidValidationCode;
+  message: string;
+}
+
+/**
+ * hsd requires `lockup >= bid` (the lockup is the publicly-visible output value; the bid is the
+ * true, blinded amount hidden until reveal) — this only catches the obvious client-side mistake
+ * early, the same "decode via hsd, don't reimplement" stance as resource-validation.ts.
+ */
+export function validateBid(request: { bid: bigint; lockup: bigint }): BidValidationIssue[] {
+  const issues: BidValidationIssue[] = [];
+  if (request.bid <= 0n) {
+    issues.push({ code: "bid-not-positive", message: "Bid must be greater than zero." });
+  }
+  if (request.lockup < request.bid) {
+    issues.push({ code: "lockup-below-bid", message: "Lockup cannot be lower than the bid." });
+  }
+  return issues;
+}
+
 /** Spec §17.3 batch results: "example1/ Success", "example3/ Failed: Wallet locked", "example4/ Skipped: Renewal not available". */
 export type NameActionStatus = "success" | "failed" | "skipped";
 

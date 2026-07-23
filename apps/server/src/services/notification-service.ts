@@ -1,8 +1,10 @@
 import {
   DEFAULT_RENEWAL_THRESHOLDS,
+  DEFAULT_REVEAL_THRESHOLDS,
   type AppNotification,
   type NotificationType,
   type RenewalThresholds,
+  type RevealThresholds,
 } from "@alice-hns-wallet/domain";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
@@ -10,6 +12,7 @@ import { notifications, settings } from "../db/schema.js";
 import { dispatchExternalNotification } from "./external-notification-service.js";
 
 const RENEWAL_THRESHOLDS_KEY = "renewal_thresholds";
+const REVEAL_THRESHOLDS_KEY = "reveal_thresholds";
 
 export interface CreateNotificationInput {
   type: NotificationType;
@@ -83,5 +86,32 @@ export function setRenewalThresholds(db: Db, thresholds: RenewalThresholds): voi
     db.update(settings).set({ value }).where(eq(settings.key, RENEWAL_THRESHOLDS_KEY)).run();
   } else {
     db.insert(settings).values({ key: RENEWAL_THRESHOLDS_KEY, value }).run();
+  }
+}
+
+/** Stored as JSON under a single settings row — spec §27.7's reveal-deadline threshold. */
+export function getRevealThresholds(db: Db): RevealThresholds {
+  const [row] = db.select().from(settings).where(eq(settings.key, REVEAL_THRESHOLDS_KEY)).all();
+  if (!row) return DEFAULT_REVEAL_THRESHOLDS;
+
+  try {
+    const parsed = JSON.parse(row.value) as Partial<RevealThresholds>;
+    return { ...DEFAULT_REVEAL_THRESHOLDS, ...parsed };
+  } catch {
+    return DEFAULT_REVEAL_THRESHOLDS;
+  }
+}
+
+export function setRevealThresholds(db: Db, thresholds: RevealThresholds): void {
+  const value = JSON.stringify(thresholds);
+  const [existing] = db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, REVEAL_THRESHOLDS_KEY))
+    .all();
+  if (existing) {
+    db.update(settings).set({ value }).where(eq(settings.key, REVEAL_THRESHOLDS_KEY)).run();
+  } else {
+    db.insert(settings).values({ key: REVEAL_THRESHOLDS_KEY, value }).run();
   }
 }

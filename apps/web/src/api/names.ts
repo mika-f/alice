@@ -153,3 +153,58 @@ export function revokeName(
     body: JSON.stringify(input),
   });
 }
+
+export interface NameAvailabilityResponse {
+  name: string;
+  available: boolean;
+  reserved: boolean;
+  state: string | null;
+}
+
+export function getNameAvailability(name: string): Promise<NameAvailabilityResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/availability`);
+}
+
+export function previewOpenName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/open/preview`, { method: "POST" });
+}
+
+export function openName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/open`, { method: "POST" });
+}
+
+export interface BidInput {
+  /** HNS decimal strings — converted with parseHnsToSmallestUnit before this call. */
+  bid: string;
+  lockup: string;
+}
+
+export function previewBidName(name: string, input: BidInput): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/bid/preview`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function bidName(name: string, input: BidInput): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/bid`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function previewRevealName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/reveal/preview`, { method: "POST" });
+}
+
+export function revealName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/reveal`, { method: "POST" });
+}
+
+export function previewRedeemName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/redeem/preview`, { method: "POST" });
+}
+
+export function redeemName(name: string): Promise<BroadcastResultResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/redeem`, { method: "POST" });
+}

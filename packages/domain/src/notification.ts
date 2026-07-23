@@ -11,6 +11,7 @@ export const NOTIFICATION_TYPES = [
   "tx-confirmed",
   "tx-failed",
   "wallet-sync-delayed",
+  "reveal-deadline-approaching",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

@@ -1,5 +1,6 @@
 import type {
   DnsRecord,
+  NameAvailability,
   NameDetails,
   NameResource,
   NameState,
@@ -12,6 +13,7 @@ import type {
   RawCovenantPreview,
   RawDnsRecord,
   RawName,
+  RawNameInfo,
   RawNameOwner,
   RawNameResource,
 } from "./raw-schemas.js";
@@ -172,11 +174,20 @@ export function toResourceData(records: DnsRecord[]): { records: Record<string, 
   return { records: records.map(fromDnsRecord) };
 }
 
+/**
+ * hsd produces a REGISTER covenant instead of UPDATE the first time a closed-but-unregistered
+ * name (a just-won auction, spec §27.6) gets its resource set — same wire call, same resource-hex
+ * item position (index 2), just a different covenant action.
+ */
 function extractUpdateResourceHex(preview: RawCovenantPreview): string {
-  const output = preview.outputs.find((o) => o.covenant.action === "UPDATE");
-  if (!output) throw new Error("hsd's UPDATE preview response had no UPDATE output");
+  const output = preview.outputs.find(
+    (o) => o.covenant.action === "UPDATE" || o.covenant.action === "REGISTER",
+  );
+  if (!output) throw new Error("hsd's UPDATE preview response had no UPDATE/REGISTER output");
   const hex = output.covenant.items[2];
-  if (hex === undefined) throw new Error("hsd's UPDATE covenant is missing the resource data item");
+  if (hex === undefined) {
+    throw new Error("hsd's UPDATE/REGISTER covenant is missing the resource data item");
+  }
   return hex;
 }
 
@@ -189,6 +200,16 @@ export function toUpdatePreviewResult(
   return {
     fee: BigInt(preview.fee),
     resource: { records, raw, size: raw.length / 2 },
+  };
+}
+
+/** hsd's node-side view of a name, independent of any wallet — used for the pre-Open availability check (spec §27.1). */
+export function toNameAvailability(name: string, raw: RawNameInfo): NameAvailability {
+  return {
+    name,
+    available: raw.info === null && !raw.start.reserved,
+    reserved: raw.start.reserved,
+    state: raw.info ? toNameState(raw.info) : null,
   };
 }
 

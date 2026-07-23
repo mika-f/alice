@@ -9,6 +9,13 @@ export const renewalThresholdsRequestSchema = z.object({
 
 export type RenewalThresholdsRequestBody = z.infer<typeof renewalThresholdsRequestSchema>;
 
+/** Spec §27.7: reveal-deadline-approaching fires once a name's remaining reveal-window blocks drop below this. */
+export const revealThresholdsRequestSchema = z.object({
+  blocksRemaining: z.number().int().positive(),
+});
+
+export type RevealThresholdsRequestBody = z.infer<typeof revealThresholdsRequestSchema>;
+
 /**
  * `url` may be submitted empty to mean "leave the existing configured value unchanged" (so
  * toggling `enabled` doesn't force retyping a webhook URL the server already has); required only

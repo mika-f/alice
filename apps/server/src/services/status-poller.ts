@@ -1,14 +1,23 @@
 import {
   classifyRenewal,
+  classifyReveal,
   type NodeStatus,
   type NotificationType,
+  type OwnedName,
+  type RevealCategory,
+  type RevealThresholds,
   type TransferState,
   type WalletStatus,
 } from "@alice-hns-wallet/domain";
+import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { isSupportedHsdVersion } from "@alice-hns-wallet/hsd-client";
 import type { Db } from "../db/client.js";
 import { listWatchedBroadcasts, unwatchBroadcast } from "./broadcast-watch-service.js";
-import { createNotification, getRenewalThresholds } from "./notification-service.js";
+import {
+  createNotification,
+  getRenewalThresholds,
+  getRevealThresholds,
+} from "./notification-service.js";
 import type { HsdConnectionManager } from "./hsd-connection-manager.js";
 import type { RescanTracker } from "./rescan-tracker.js";
 
@@ -52,6 +61,7 @@ export class StatusPoller {
   private readonly activeProblems = new Set<NotificationType>();
   private readonly lastRenewalCategory = new Map<string, string>();
   private readonly lastTransferState = new Map<string, TransferState>();
+  private readonly lastRevealCategory = new Map<string, RevealCategory>();
 
   constructor(
     private readonly hsdManager: HsdConnectionManager,
@@ -156,8 +166,10 @@ export class StatusPoller {
   }
 
   private async checkNameNotifications(): Promise<void> {
-    const names = await this.hsdManager.get().getNames();
+    const hsd = this.hsdManager.get();
+    const names = await hsd.getNames();
     const thresholds = getRenewalThresholds(this.db!);
+    const revealThresholds = getRevealThresholds(this.db!);
 
     for (const item of names) {
       const category = classifyRenewal(item, thresholds);
@@ -195,7 +207,41 @@ export class StatusPoller {
         }
       }
       this.lastTransferState.set(item.name, item.transferState);
+
+      await this.checkRevealNotification(hsd, item, revealThresholds);
     }
+  }
+
+  /**
+   * Spec §27.7: only fires for names *this wallet* has an unrevealed bid on, and only on a
+   * category transition. The bulk `OwnedName` already carries state/blocksRemaining, so
+   * classification is free; the extra per-name detail fetch (to confirm an own, unrevealed bid)
+   * only runs for names already in "revealing" state — a handful at a time, not all ~100.
+   */
+  private async checkRevealNotification(
+    hsd: HsdV8Adapter,
+    item: OwnedName,
+    thresholds: RevealThresholds,
+  ): Promise<void> {
+    const category = classifyReveal(item, thresholds);
+    const previous = this.lastRevealCategory.get(item.name);
+    if (category === previous) return;
+    this.lastRevealCategory.set(item.name, category);
+    if (category === "none") return;
+
+    const detail = await hsd.getName(item.name);
+    const hasUnrevealedOwnBid =
+      detail.bids.some((bid) => bid.own) && !detail.reveals.some((reveal) => reveal.own);
+    if (!hasUnrevealedOwnBid) return;
+
+    this.notify({
+      type: "reveal-deadline-approaching",
+      name: item.name,
+      message:
+        category === "urgent"
+          ? `${item.name}'s reveal deadline is imminent — reveal now or forfeit your bid`
+          : `${item.name} has entered its reveal window — reveal your bid before it closes`,
+    });
   }
 
   /**

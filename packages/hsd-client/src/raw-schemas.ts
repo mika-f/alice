@@ -229,3 +229,21 @@ export const rawCovenantBroadcastSchema = z.object({
 });
 
 export type RawCovenantBroadcast = z.infer<typeof rawCovenantBroadcastSchema>;
+
+/**
+ * Node RPC `getnameinfo` — observed against a live hsd 8.0.0 regtest node. `info` is `null` when
+ * the name has never been opened (no auction record exists anywhere); when present its shape is
+ * identical to `rawNameSchema` (this is the same `NameState.toJSON()` used by the wallet's own
+ * `/name` endpoints, just reached via the node instead of a wallet). `start.reserved` is hsd's own
+ * ICANN-reserved-name flag — used directly instead of bundling a reserved-name list (spec §27.1).
+ */
+export const rawNameInfoSchema = z.object({
+  start: z.object({
+    reserved: z.boolean(),
+    week: z.number().int(),
+    start: z.number().int(),
+  }),
+  info: rawNameSchema.nullable(),
+});
+
+export type RawNameInfo = z.infer<typeof rawNameInfoSchema>;

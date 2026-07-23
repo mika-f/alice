@@ -1,7 +1,9 @@
 import {
   classifyRenewal,
+  type BidNameRequest,
   type BroadcastResult,
   type NameActionResult,
+  type NameAvailability,
   type NameDetails,
   type NameResource,
   type OwnedName,
@@ -212,6 +214,70 @@ export async function revokeName(
   name: string,
 ): Promise<BroadcastResult> {
   const result = await hsd.revokeName(name);
+  watchBroadcast(db, result.txid, name);
+  await hsd.lock();
+  return result;
+}
+
+/** Spec §27.1: works for any name, including ones never opened by this or any other wallet. */
+export function checkNameAvailability(hsd: HsdV8Adapter, name: string): Promise<NameAvailability> {
+  return hsd.getNameAvailability(name);
+}
+
+export function previewOpenName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+  return hsd.previewOpenName(name);
+}
+
+export async function openName(db: Db, hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+  const result = await hsd.openName(name);
+  watchBroadcast(db, result.txid, name);
+  await hsd.lock();
+  return result;
+}
+
+export function previewBidName(
+  hsd: HsdV8Adapter,
+  request: BidNameRequest,
+): Promise<BroadcastResult> {
+  return hsd.previewBidName(request);
+}
+
+export async function bidName(
+  db: Db,
+  hsd: HsdV8Adapter,
+  request: BidNameRequest,
+): Promise<BroadcastResult> {
+  const result = await hsd.bidName(request);
+  watchBroadcast(db, result.txid, request.name);
+  await hsd.lock();
+  return result;
+}
+
+export function previewRevealName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+  return hsd.previewRevealName(name);
+}
+
+export async function revealName(
+  db: Db,
+  hsd: HsdV8Adapter,
+  name: string,
+): Promise<BroadcastResult> {
+  const result = await hsd.revealName(name);
+  watchBroadcast(db, result.txid, name);
+  await hsd.lock();
+  return result;
+}
+
+export function previewRedeemName(hsd: HsdV8Adapter, name: string): Promise<BroadcastResult> {
+  return hsd.previewRedeemName(name);
+}
+
+export async function redeemName(
+  db: Db,
+  hsd: HsdV8Adapter,
+  name: string,
+): Promise<BroadcastResult> {
+  const result = await hsd.redeemName(name);
   watchBroadcast(db, result.txid, name);
   await hsd.lock();
   return result;

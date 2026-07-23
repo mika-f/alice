@@ -2,6 +2,7 @@ import type { DnsRecord } from "@alice-hns-wallet/domain";
 import { describe, expect, it } from "vitest";
 import {
   hasOwner,
+  toNameAvailability,
   toNameDetails,
   toNameResource,
   toNameState,
@@ -14,6 +15,7 @@ import type {
   RawAuction,
   RawCovenantPreview,
   RawName,
+  RawNameInfo,
   RawNameOwner,
   RawNameResource,
 } from "./raw-schemas.js";
@@ -131,6 +133,41 @@ describe("toOwnedName", () => {
   it("is null when there is no resource set", () => {
     const owned = toOwnedName(baseName({ data: "" }));
     expect(owned.resourceSummary).toBeNull();
+  });
+});
+
+describe("toNameAvailability", () => {
+  function nameInfo(overrides: Partial<RawNameInfo>): RawNameInfo {
+    return { start: { reserved: false, week: 1, start: 1 }, info: null, ...overrides };
+  }
+
+  it("is available when hsd has no auction record and the name isn't reserved", () => {
+    const availability = toNameAvailability("example", nameInfo({}));
+    expect(availability).toEqual({
+      name: "example",
+      available: true,
+      reserved: false,
+      state: null,
+    });
+  });
+
+  it("is not available when the name is ICANN-reserved, even with no auction record", () => {
+    const availability = toNameAvailability(
+      "google",
+      nameInfo({ start: { reserved: true, week: 1, start: 1 } }),
+    );
+    expect(availability.available).toBe(false);
+    expect(availability.reserved).toBe(true);
+    expect(availability.state).toBeNull();
+  });
+
+  it("reports the real auction state once a name has been opened", () => {
+    const availability = toNameAvailability(
+      "example",
+      nameInfo({ info: baseName({ state: "BIDDING" }) }),
+    );
+    expect(availability.available).toBe(false);
+    expect(availability.state).toBe("bidding");
   });
 });
 
@@ -272,6 +309,25 @@ describe("toUpdatePreviewResult", () => {
       raw: "0006010568656c6c6f",
       size: "0006010568656c6c6f".length / 2,
     });
+  });
+
+  it("extracts the raw resource hex from a REGISTER covenant output (first-time registration, spec §27.6)", () => {
+    const records: DnsRecord[] = [{ type: "TXT", text: ["hello"] }];
+    const preview = baseCovenantPreview({
+      outputs: [
+        {
+          value: 0,
+          address: "rs1qowner",
+          covenant: {
+            type: 6,
+            action: "REGISTER",
+            items: ["namehash", "height", "0006010568656c6c6f", "renewalproof"],
+          },
+        },
+      ],
+    });
+    const result = toUpdatePreviewResult(preview, records);
+    expect(result.resource.raw).toBe("0006010568656c6c6f");
   });
 
   it("throws if hsd's response has no UPDATE output", () => {

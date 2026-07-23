@@ -122,14 +122,11 @@ async function retry<T>(
   throw lastError;
 }
 
-/** Creates a dedicated wallet, funds it, and registers a fresh name through OPEN -> BID -> REVEAL -> REGISTER via the raw HTTP API (not the routes under test). */
-async function setUpFreshOwnedName(): Promise<{
-  walletId: string;
-  addr: string;
-  name: string;
-  env: Env;
-}> {
-  const walletId = `p4route-${randomUUID().slice(0, 8)}`;
+/** Creates a dedicated wallet and funds it, returning an `env` pointed at it for `buildApp`. */
+async function freshFundedWallet(
+  prefix: string,
+): Promise<{ walletId: string; addr: string; env: Env }> {
+  const walletId = `${prefix}-${randomUUID().slice(0, 8)}`;
   await fetch(`${WALLET_URL}/wallet/${walletId}`, {
     method: "PUT",
     headers: {
@@ -148,6 +145,17 @@ async function setUpFreshOwnedName(): Promise<{
   // as a spurious "Name is already opening" from hsd, not a funds/timing error it reports clearly).
   await waitForWalletFunds(walletId);
 
+  return { walletId, addr, env: { ...env, HSD_WALLET_ID: walletId } };
+}
+
+/** Creates a dedicated wallet, funds it, and registers a fresh name through OPEN -> BID -> REVEAL -> REGISTER via the raw HTTP API (not the routes under test). */
+async function setUpFreshOwnedName(): Promise<{
+  walletId: string;
+  addr: string;
+  name: string;
+  env: Env;
+}> {
+  const { walletId, addr, env: walletEnv } = await freshFundedWallet("p4route");
   const name = `aliceroute${randomUUID().slice(0, 8)}`;
 
   await retry(
@@ -193,7 +201,7 @@ async function setUpFreshOwnedName(): Promise<{
   );
   await mineTo(addr, 3);
 
-  return { walletId, addr, name, env: { ...env, HSD_WALLET_ID: walletId } };
+  return { walletId, addr, name, env: walletEnv };
 }
 
 interface Jar {
@@ -423,4 +431,99 @@ describe.skipIf(!available)("name routes against a live regtest hsd", () => {
     const result = await readJson<{ txid: string }>(res);
     expect(result.txid).toMatch(/^[0-9a-f]{64}$/);
   }, 30_000);
+
+  describe("Phase 6: name auction routes", () => {
+    it("reports a never-opened name as available via the availability route", async () => {
+      const app = buildApp();
+      const jar = cookieJar();
+      await setUpAndLogIn(app, jar);
+
+      const name = `aliceroutenew${randomUUID().slice(0, 8)}`;
+      const res = await app.request(`/api/names/${name}/availability`, {
+        headers: { cookie: jar.header() },
+      });
+      expect(res.status).toBe(200);
+      const availability = await readJson<{ available: boolean; reserved: boolean }>(res);
+      expect(availability).toEqual({ name, available: true, reserved: false, state: null });
+    });
+
+    it("runs OPEN -> BID -> REVEAL through the full HTTP routes, rejecting an invalid bid first", async () => {
+      const { addr, env: walletEnv } = await freshFundedWallet("p6route");
+      const app = buildApp(walletEnv);
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+      const name = `alicep6route${randomUUID().slice(0, 8)}`;
+
+      const openPreviewRes = await req(app, jar, "POST", `/api/names/${name}/open/preview`, csrf);
+      expect(openPreviewRes.status).toBe(200);
+
+      const openRes = await retry(
+        addr,
+        async () => {
+          const res = await req(app, jar, "POST", `/api/names/${name}/open`, csrf);
+          if (res.status !== 200) throw new Error(`open failed with ${res.status}`);
+          return res;
+        },
+        5,
+      );
+      const opened = await readJson<{ txid: string }>(openRes);
+      expect(opened.txid).toMatch(/^[0-9a-f]{64}$/);
+      await mineTo(addr, 8);
+
+      const invalidBidRes = await req(app, jar, "POST", `/api/names/${name}/bid/preview`, csrf, {
+        bid: "1000000",
+        lockup: "500000",
+      });
+      expect(invalidBidRes.status).toBe(400);
+      const invalidBidBody = await readJson<{ issues: { code: string }[] }>(invalidBidRes);
+      expect(invalidBidBody.issues.some((i) => i.code === "lockup-below-bid")).toBe(true);
+
+      await retry(
+        addr,
+        async () => {
+          const res = await req(app, jar, "POST", `/api/names/${name}/bid`, csrf, {
+            bid: "500000",
+            lockup: "600000",
+          });
+          if (res.status !== 200) throw new Error(`bid failed with ${res.status}`);
+          return res;
+        },
+        8,
+      );
+      await mineTo(addr, 8);
+
+      const revealPreviewRes = await req(
+        app,
+        jar,
+        "POST",
+        `/api/names/${name}/reveal/preview`,
+        csrf,
+      );
+      expect(revealPreviewRes.status).toBe(200);
+
+      const revealRes = await retry(
+        addr,
+        async () => {
+          const res = await req(app, jar, "POST", `/api/names/${name}/reveal`, csrf);
+          if (res.status !== 200) throw new Error(`reveal failed with ${res.status}`);
+          return res;
+        },
+        8,
+      );
+      const revealed = await readJson<{ txid: string }>(revealRes);
+      expect(revealed.txid).toMatch(/^[0-9a-f]{64}$/);
+    }, 60_000);
+
+    it("surfaces hsd's own rejection when redeeming a name with no reveals to redeem", async () => {
+      const { name, env: walletEnv } = await setUpFreshOwnedName();
+      const app = buildApp(walletEnv);
+      const jar = cookieJar();
+      const csrf = await setUpAndLogIn(app, jar);
+
+      const res = await req(app, jar, "POST", `/api/names/${name}/redeem`, csrf);
+      expect(res.status).toBe(400);
+      const body = await readJson<{ error: string }>(res);
+      expect(body.error).toContain("No reveals to redeem");
+    }, 30_000);
+  });
 });

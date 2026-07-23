@@ -8,4 +8,5 @@ export * from "./resource-validation.js";
 export * from "./name.js";
 export * from "./blocks.js";
 export * from "./renewal.js";
+export * from "./reveal.js";
 export * from "./notification.js";

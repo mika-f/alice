@@ -48,6 +48,15 @@ function NameDetailPage() {
   }
 
   const detail = detailQuery.data;
+  const hasOwnBid = detail?.bids.some((b) => b.own) ?? false;
+  const hasOwnReveal = detail?.reveals.some((r) => r.own) ?? false;
+  const canBid = detail && (detail.state === "opening" || detail.state === "bidding");
+  const canReveal = detail && detail.state === "revealing" && hasOwnBid && !hasOwnReveal;
+  const canRedeem = detail && detail.state === "closed" && hasOwnReveal;
+  // hsd tracks ownership of the winning coin as soon as an auction closes, before the winner has
+  // ever called REGISTER — `owned` alone doesn't imply "already registered" while state stays
+  // "closed" (that only flips to "owned" once a REGISTER/UPDATE tx has landed).
+  const canRegister = detail && detail.state === "closed" && detail.owned && hasOwnReveal;
 
   return (
     <main className="dashboard">
@@ -97,7 +106,7 @@ function NameDetailPage() {
             </p>
           </div>
 
-          {detail.owned && (
+          {detail.owned && detail.state !== "closed" && (
             <div className="card">
               <h1>Actions</h1>
               <div className="field-row" style={{ flexWrap: "wrap" }}>
@@ -120,6 +129,34 @@ function NameDetailPage() {
                 <Link to="/names/$name/revoke" params={{ name }} className="button danger">
                   Revoke
                 </Link>
+              </div>
+            </div>
+          )}
+
+          {(canBid || canReveal || canRedeem || canRegister) && (
+            <div className="card">
+              <h1>Auction actions</h1>
+              <div className="field-row" style={{ flexWrap: "wrap" }}>
+                {canBid && (
+                  <Link to="/names/$name/bid" params={{ name }} className="button secondary">
+                    Place bid
+                  </Link>
+                )}
+                {canReveal && (
+                  <Link to="/names/$name/reveal" params={{ name }} className="button">
+                    Reveal bid
+                  </Link>
+                )}
+                {canRegister && (
+                  <Link to="/names/$name/edit" params={{ name }} className="button">
+                    Register
+                  </Link>
+                )}
+                {canRedeem && (
+                  <Link to="/names/$name/redeem" params={{ name }} className="button secondary">
+                    Redeem
+                  </Link>
+                )}
               </div>
             </div>
           )}

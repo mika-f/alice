@@ -1,8 +1,10 @@
 import {
   isNetwork,
+  type BidNameRequest,
   type BroadcastResult,
   type MnemonicImportInput,
   type NameActionResult,
+  type NameAvailability,
   type NameDetails,
   type Network,
   type NodeStatus,
@@ -21,6 +23,7 @@ import {
 import { HsdHttpClient, HsdHttpError } from "./http.js";
 import {
   hasOwner,
+  toNameAvailability,
   toNameDetails,
   toOwnedName,
   toResourceData,
@@ -34,6 +37,7 @@ import {
   rawCoinSchema,
   rawCovenantBroadcastSchema,
   rawCovenantPreviewSchema,
+  rawNameInfoSchema,
   rawNameResourceSchema,
   rawNameSchema,
   rawNodeInfoSchema,
@@ -377,6 +381,66 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
 
   async revokeName(name: string): Promise<BroadcastResult> {
     return this.broadcastCovenantOp(`/wallet/${this.walletId}/revoke`, { name });
+  }
+
+  /** Node-side lookup (spec §27.1) — works for any name, including ones this wallet has never opened. */
+  async getNameAvailability(name: string): Promise<NameAvailability> {
+    const raw = rawNameInfoSchema.parse(await this.node.rpc("getnameinfo", [name]));
+    return toNameAvailability(name, raw);
+  }
+
+  async previewOpenName(name: string): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/open`, {
+      name,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async openName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/open`, { name });
+  }
+
+  async previewBidName(request: BidNameRequest): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/bid`, {
+      name: request.name,
+      bid: Number(request.bid),
+      lockup: Number(request.lockup),
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async bidName(request: BidNameRequest): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/bid`, {
+      name: request.name,
+      bid: Number(request.bid),
+      lockup: Number(request.lockup),
+    });
+  }
+
+  async previewRevealName(name: string): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/reveal`, {
+      name,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async revealName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/reveal`, { name });
+  }
+
+  async previewRedeemName(name: string): Promise<BroadcastResult> {
+    const raw = await this.postCovenantOp(`/wallet/${this.walletId}/redeem`, {
+      name,
+      broadcast: false,
+    });
+    return { txid: raw.hash, fee: BigInt(raw.fee) };
+  }
+
+  async redeemName(name: string): Promise<BroadcastResult> {
+    return this.broadcastCovenantOp(`/wallet/${this.walletId}/redeem`, { name });
   }
 
   private async postCovenantOp(

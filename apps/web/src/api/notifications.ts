@@ -30,3 +30,18 @@ export function getRenewalThresholds(): Promise<RenewalThresholdsResponse> {
 export function setRenewalThresholds(input: RenewalThresholdsResponse): Promise<void> {
   return apiFetch("/api/settings/notifications", { method: "PUT", body: JSON.stringify(input) });
 }
+
+export interface RevealThresholdsResponse {
+  blocksRemaining: number;
+}
+
+export function getRevealThresholds(): Promise<RevealThresholdsResponse> {
+  return apiFetch("/api/settings/reveal-thresholds");
+}
+
+export function setRevealThresholds(input: RevealThresholdsResponse): Promise<void> {
+  return apiFetch("/api/settings/reveal-thresholds", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
