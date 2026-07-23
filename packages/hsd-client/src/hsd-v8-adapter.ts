@@ -46,6 +46,7 @@ import {
   rawWalletAddressSchema,
   rawWalletBalanceSchema,
   rawWalletInfoSchema,
+  type RawAuction,
   type RawCovenantPreview,
   type RawNameOwner,
   type RawWalletBalance,
@@ -264,9 +265,7 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
   }
 
   async getName(name: string): Promise<NameDetails> {
-    const raw = rawAuctionSchema.parse(
-      await this.wallet.get(`/wallet/${this.walletId}/auction/${encodeURIComponent(name)}`),
-    );
+    const raw = await this.getAuctionRecord(name);
 
     const resource =
       raw.data.length > 0
@@ -276,6 +275,28 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     const ownership = await this.resolveOwnership(raw.owner);
 
     return toNameDetails(raw, resource, ownership);
+  }
+
+  /**
+   * `/wallet/:id/auction/:name` 404s whenever this wallet has never opened/bid on the name itself
+   * (hsd looks it up via `wallet.getNameStateByName`, which is only populated for auctions the
+   * wallet has touched) — it does not mean the auction doesn't exist. Fall back to the node's
+   * `getnameinfo` RPC, which resolves any name from chain state, and report no bids/reveals since
+   * this wallet hasn't observed any of its own.
+   */
+  private async getAuctionRecord(name: string): Promise<RawAuction> {
+    try {
+      return rawAuctionSchema.parse(
+        await this.wallet.get(`/wallet/${this.walletId}/auction/${encodeURIComponent(name)}`),
+      );
+    } catch (error) {
+      if (!(error instanceof HsdHttpError) || error.status !== 404) throw error;
+
+      const { info } = rawNameInfoSchema.parse(await this.node.rpc("getnameinfo", [name]));
+      if (!info) throw error;
+
+      return { ...info, bids: [], reveals: [] };
+    }
   }
 
   /**
