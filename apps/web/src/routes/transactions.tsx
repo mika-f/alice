@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getTransactions, setTxMeta, type TransactionResponse } from "../api/wallet.js";
 import { useSession } from "../hooks/useSession.js";
 import { formatHns } from "../lib/hns.js";
+import { shakeshiftBlockUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const transactionsRoute = createRoute({
@@ -80,7 +81,26 @@ function TransactionsPage() {
                 </span>
               </div>
               <span className="muted">
-                {outputSummary(tx) || "Wallet transaction"} · <code>{tx.txid}</code>
+                {outputSummary(tx) || "Wallet transaction"} ·{" "}
+                <a
+                  href={shakeshiftTransactionUrl(tx.txid)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <code>{tx.txid}</code>
+                </a>
+                {tx.blockHeight !== null && (
+                  <>
+                    {" · "}
+                    <a
+                      href={shakeshiftBlockUrl(tx.blockHeight)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Block {tx.blockHeight}
+                    </a>
+                  </>
+                )}
               </span>
               {(tx.label || tx.memo) && (
                 <span className="activity-note">{tx.label || tx.memo}</span>

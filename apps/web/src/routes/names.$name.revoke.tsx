@@ -5,6 +5,7 @@ import { reauth } from "../api/auth.js";
 import { ApiError } from "../api/client.js";
 import { revokeName, type BroadcastResultResponse } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
+import { shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameRevokeRoute = createRoute({
@@ -64,7 +65,10 @@ function NameRevokePage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
       </main>
     );

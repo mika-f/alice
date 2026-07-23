@@ -23,6 +23,7 @@ import {
   RECORD_TYPES,
   type EditableRecordType,
 } from "../lib/dns-records.js";
+import { shakeshiftNameUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameEditRoute = createRoute({
@@ -295,8 +296,16 @@ function NameEditPage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
+        <p className="muted">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View {name} on Shakeshift
+          </a>
+        </p>
       </main>
     );
   }

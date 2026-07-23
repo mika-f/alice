@@ -5,6 +5,7 @@ import { reauth } from "../api/auth.js";
 import { ApiError } from "../api/client.js";
 import { previewRevealName, revealName, type BroadcastResultResponse } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
+import { shakeshiftNameUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameRevealRoute = createRoute({
@@ -77,8 +78,16 @@ function NameRevealPage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
+        <p className="muted">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View {name} on Shakeshift
+          </a>
+        </p>
       </main>
     );
   }

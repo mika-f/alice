@@ -6,6 +6,7 @@ import { ApiError } from "../api/client.js";
 import { bidName, previewBidName, type BroadcastResultResponse } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
 import { parseHnsToSmallestUnit } from "../lib/hns.js";
+import { shakeshiftNameUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameBidRoute = createRoute({
@@ -99,11 +100,19 @@ function NameBidPage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
         <p className="muted">
           Your lockup is locked until the reveal period. You must come back and reveal your bid once
           the name enters its reveal window, or you will forfeit the entire lockup.
+        </p>
+        <p className="muted">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View {name} on Shakeshift
+          </a>
         </p>
       </main>
     );

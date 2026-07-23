@@ -11,6 +11,7 @@ import {
   type NameAvailabilityResponse,
 } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
+import { shakeshiftNameUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameOpenRoute = createRoute({
@@ -94,11 +95,19 @@ function NameOpenPage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
         <p className="muted">
           Bidding opens after a short delay while this confirms on-chain. Check the name's detail
           page to place a bid once it enters the bidding state.
+        </p>
+        <p className="muted">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View {name} on Shakeshift
+          </a>
         </p>
       </main>
     );

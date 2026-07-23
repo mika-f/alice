@@ -6,6 +6,7 @@ import { getName, setNameMeta } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
 import { describeRecord } from "../lib/dns-records.js";
 import { formatHns } from "../lib/hns.js";
+import { shakeshiftBlockUrl, shakeshiftNameUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameDetailRoute = createRoute({
@@ -62,7 +63,12 @@ function NameDetailPage() {
     <main className="dashboard">
       <div className="dashboard-header">
         <h1>{name}</h1>
-        <Link to="/names">Back to names</Link>
+        <div className="field-row page-actions">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View on Shakeshift
+          </a>
+          <Link to="/names">Back to names</Link>
+        </div>
       </div>
 
       {detailQuery.isLoading && <p className="muted">Loading…</p>}
@@ -83,7 +89,14 @@ function NameDetailPage() {
               <strong>Owner address:</strong> {detail.ownerAddress ?? "—"}
             </p>
             <p>
-              <strong>Block height:</strong> {detail.blockHeight}
+              <strong>Block height:</strong>{" "}
+              <a
+                href={shakeshiftBlockUrl(detail.blockHeight)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {detail.blockHeight}
+              </a>
             </p>
             <p>
               <strong>Renewal height:</strong> {detail.renewalHeight || "—"} ·{" "}

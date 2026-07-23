@@ -5,6 +5,7 @@ import { reauth } from "../api/auth.js";
 import { ApiError } from "../api/client.js";
 import { previewTransferName, transferName, type BroadcastResultResponse } from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
+import { shakeshiftNameUrl, shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const nameTransferRoute = createRoute({
@@ -81,11 +82,19 @@ function NameTransferPage() {
           </Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
         <p className="muted">
           The transfer must clear a lockup period on-chain before it can be finalized. Check the
           name's detail page to see when Finalize becomes available.
+        </p>
+        <p className="muted">
+          <a href={shakeshiftNameUrl(name)} target="_blank" rel="noopener noreferrer">
+            View {name} on Shakeshift
+          </a>
         </p>
       </main>
     );

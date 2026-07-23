@@ -6,6 +6,7 @@ import { ApiError } from "../api/client.js";
 import { estimateSend, getBalance, sendHns, type BroadcastResultResponse } from "../api/wallet.js";
 import { useSession } from "../hooks/useSession.js";
 import { formatHns, parseHnsToSmallestUnit } from "../lib/hns.js";
+import { shakeshiftTransactionUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
 export const sendRoute = createRoute({
@@ -89,7 +90,10 @@ function SendPage() {
           <Link to="/">Back to dashboard</Link>
         </div>
         <div className="success-banner">
-          Broadcast. Transaction ID: <code>{result.txid}</code>
+          Broadcast. Transaction ID:{" "}
+          <a href={shakeshiftTransactionUrl(result.txid)} target="_blank" rel="noopener noreferrer">
+            <code>{result.txid}</code>
+          </a>
         </div>
         <p className="muted">
           If anything goes wrong reporting this, check the transaction history before sending again
