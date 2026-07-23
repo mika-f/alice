@@ -96,19 +96,28 @@ function ReceivePage() {
         <Link to="/">Back to dashboard</Link>
       </div>
 
-      <div className="card">
+      <div className="card receive-card">
         {current ? (
           <>
-            {qrDataUrl && (
-              <img
-                src={qrDataUrl}
-                alt={`QR code for ${current.address}`}
-                width={240}
-                height={240}
-              />
-            )}
-            <p className="muted">{current.address}</p>
-            <div className="field-row">
+            <div className="receive-card-heading">
+              <div>
+                <span className="eyebrow">Your active address</span>
+                <h2>Ready to receive</h2>
+              </div>
+              <span className="status-badge status-badge-success">Active</span>
+            </div>
+            <div className="qr-frame">
+              {qrDataUrl && (
+                <img
+                  src={qrDataUrl}
+                  alt={`QR code for ${current.address}`}
+                  width={240}
+                  height={240}
+                />
+              )}
+            </div>
+            <p className="address-display">{current.address}</p>
+            <div className="field-row receive-actions">
               <button type="button" className="button secondary" onClick={() => void copyAddress()}>
                 {copied ? "Copied!" : "Copy address"}
               </button>
@@ -121,8 +130,8 @@ function ReceivePage() {
           <p>Issuing a receive address…</p>
         )}
         <button
+          className="generate-address"
           type="button"
-          className="link-button"
           onClick={() => issueMutation.mutate()}
           disabled={issueMutation.isPending}
         >
@@ -130,15 +139,37 @@ function ReceivePage() {
         </button>
       </div>
 
-      <h1>Previous addresses</h1>
-      <ul>
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Address book</span>
+          <h2>Previous addresses</h2>
+        </div>
+        <span className="muted">{addressesQuery.data?.length ?? 0} total</span>
+      </div>
+      <ul className="address-list">
         {addressesQuery.data?.map((entry) => (
           <li key={entry.address}>
-            <code>{entry.address}</code> {entry.used ? "(used)" : "(unused)"}
-            {entry.label ? ` — ${entry.label}` : ""}{" "}
-            <button type="button" className="link-button" onClick={() => void labelAddress(entry)}>
-              Label
-            </button>
+            <div className="address-list-main">
+              <span className={`address-dot ${entry.used ? "used" : ""}`} />
+              <div>
+                <code>{entry.address}</code>
+                <span className="muted">{entry.label || "Unlabeled address"}</span>
+              </div>
+            </div>
+            <div className="address-list-meta">
+              <span
+                className={`status-badge ${entry.used ? "status-badge-muted" : "status-badge-success"}`}
+              >
+                {entry.used ? "Used" : "Unused"}
+              </span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => void labelAddress(entry)}
+              >
+                Edit label
+              </button>
+            </div>
           </li>
         ))}
       </ul>

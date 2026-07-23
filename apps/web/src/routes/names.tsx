@@ -216,15 +216,27 @@ function NamesPage() {
         <Link to="/">Back to dashboard</Link>
       </div>
 
-      <div className="field">
-        <label htmlFor="name-search">Search</label>
-        <input
-          id="name-search"
-          type="search"
-          placeholder="Name, label, or memo"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      <div className="names-toolbar">
+        <div className="search-field">
+          <label htmlFor="name-search">Search names</label>
+          <input
+            id="name-search"
+            type="search"
+            placeholder="Name, label, or memo"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="sort-field">
+          <label htmlFor="name-sort">Sort by</label>
+          <select id="name-sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+            {SORTS.map((s) => (
+              <option key={s} value={s}>
+                {SORT_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="field-row" style={{ flexWrap: "wrap", marginBottom: 16 }}>
@@ -238,17 +250,6 @@ function NamesPage() {
             {FILTER_LABELS[f]}
           </button>
         ))}
-      </div>
-
-      <div className="field">
-        <label htmlFor="name-sort">Sort by</label>
-        <select id="name-sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-          {SORTS.map((s) => (
-            <option key={s} value={s}>
-              {SORT_LABELS[s]}
-            </option>
-          ))}
-        </select>
       </div>
 
       {namesQuery.isLoading && <p className="muted">Loading names…</p>}
@@ -321,7 +322,7 @@ function NamesPage() {
         </button>
       </div>
 
-      <ul>
+      <ul className="name-list">
         {visible.map((item) => (
           <li key={item.name}>
             {isRenewable(item) && (
@@ -331,21 +332,25 @@ function NamesPage() {
                 onChange={() => toggleSelected(item.name)}
                 aria-label={`Select ${item.name} for batch renewal`}
               />
-            )}{" "}
-            <Link to="/names/$name" params={{ name: item.name }}>
-              <strong>{item.name}</strong>
-            </Link>{" "}
-            — {item.state}
-            {item.owned ? " (owned)" : ""}
-            {item.transferState !== "none" && ` · transfer: ${item.transferState}`}
-            <br />
-            <span className="muted">
-              Renewal @{item.renewalHeight || "—"} · Expiration @{item.expirationHeight || "—"} ·{" "}
-              {formatRemaining(item.blocksRemaining)}
-            </span>
-            {item.resourceSummary && <span className="muted"> · {item.resourceSummary}</span>}
-            {item.label && <span> — {item.label}</span>}
-            {item.memo && <span className="muted"> ({item.memo})</span>}
+            )}
+            <div className="name-list-main">
+              <div className="name-list-title">
+                <Link to="/names/$name" params={{ name: item.name }}>
+                  <strong>{item.name}</strong>
+                </Link>
+                <span className="status-badge status-badge-muted">{item.state}</span>
+              </div>
+              <span className="muted">
+                Renewal @{item.renewalHeight || "—"} · Expiration @{item.expirationHeight || "—"} ·{" "}
+                {formatRemaining(item.blocksRemaining)}
+              </span>
+              {(item.label || item.memo || item.resourceSummary) && (
+                <span className="name-list-note">
+                  {item.label || item.memo || item.resourceSummary}
+                </span>
+              )}
+            </div>
+            {item.owned && <span className="status-badge status-badge-success">Owned</span>}
           </li>
         ))}
       </ul>

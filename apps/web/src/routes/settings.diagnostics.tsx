@@ -56,7 +56,7 @@ function DiagnosticsPage() {
 
       {data && (
         <>
-          <div className="card">
+          <div className="card diagnostic-card">
             <h1>Connection</h1>
             <div>Display name: {data.connection.displayName}</div>
             <div>Node URL: {data.connection.nodeUrl}</div>
@@ -67,7 +67,7 @@ function DiagnosticsPage() {
             <div>Timeout: {data.connection.timeoutMs}ms</div>
           </div>
 
-          <div className="card">
+          <div className="card diagnostic-card">
             <h1>Node</h1>
             <div>Reachable: {statusText(data.node.reachable)}</div>
             {data.node.error && <div className="error-text">{data.node.error}</div>}
@@ -86,7 +86,7 @@ function DiagnosticsPage() {
             <div>hsd version supported: {statusText(data.hsdVersionSupported)}</div>
           </div>
 
-          <div className="card">
+          <div className="card diagnostic-card">
             <h1>Wallet</h1>
             <div>Reachable: {statusText(data.wallet.reachable)}</div>
             {data.wallet.error && <div className="error-text">{data.wallet.error}</div>}
@@ -101,7 +101,7 @@ function DiagnosticsPage() {
             <div>Network matches node: {statusText(data.networkMatches)}</div>
           </div>
 
-          <div className="card">
+          <div className="card diagnostic-card">
             <h1>Warnings</h1>
             {data.warnings.length === 0 ? (
               <p className="muted">None.</p>

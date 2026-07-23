@@ -121,6 +121,7 @@ function ImportWalletPage() {
       )}
 
       <form
+        className="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
           importMutation.mutate();

@@ -100,7 +100,7 @@ function ExternalNotificationSettingsPage() {
       )}
 
       <form
-        className="card"
+        className="card settings-form"
         onSubmit={(e) => {
           e.preventDefault();
           setSaved(false);

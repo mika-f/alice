@@ -133,6 +133,7 @@ function ConnectionSettingsPage() {
       )}
 
       <form
+        className="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
           saveMutation.mutate();

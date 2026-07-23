@@ -141,6 +141,7 @@ function SendPage() {
       )}
 
       <form
+        className="send-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (!estimate) {

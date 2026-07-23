@@ -45,24 +45,24 @@ function AuditLogPage() {
         <p className="muted">No activity recorded yet.</p>
       )}
 
-      <ul>
+      <ul className="audit-list">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <strong>{entry.action}</strong>{" "}
-            <span className={entry.outcome === "success" ? "muted" : "error-text"}>
-              {entry.outcome}
-            </span>
-            {entry.target && <> — {entry.target}</>}
-            <br />
-            {entry.detail && (
-              <>
-                {entry.detail}
-                <br />
-              </>
-            )}
-            <span className="muted">
+            <div className="audit-main">
+              <div className="audit-title">
+                <strong>{entry.action}</strong>
+                <span
+                  className={`status-badge ${entry.outcome === "success" ? "status-badge-success" : "status-badge-error"}`}
+                >
+                  {entry.outcome}
+                </span>
+              </div>
+              {entry.target && <span className="muted">{entry.target}</span>}
+              {entry.detail && <span className="audit-detail">{entry.detail}</span>}
+            </div>
+            <span className="muted audit-time">
               {formatTimestamp(entry.createdAt)}
-              {entry.ip && <> — {entry.ip}</>}
+              {entry.ip && <> · {entry.ip}</>}
             </span>
           </li>
         ))}

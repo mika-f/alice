@@ -64,22 +64,41 @@ function TransactionsPage() {
         <Link to="/">Back to dashboard</Link>
       </div>
 
-      <ul>
+      <div className="activity-list">
         {items.map((tx) => (
-          <li key={tx.txid}>
-            <strong>{tx.kind}</strong> {tx.kind === "receive" ? "+" : "-"}
-            {formatHns(tx.amount)} HNS — {tx.status}
-            {outputSummary(tx) && <> ({outputSummary(tx)})</>}
-            <br />
-            <code>{tx.txid}</code>
-            {tx.label && <> — {tx.label}</>}
-            {tx.memo && <> ({tx.memo})</>}{" "}
+          <article key={tx.txid} className="activity-item">
+            <div className={`activity-icon ${tx.kind === "receive" ? "receive" : "send"}`}>
+              {tx.kind === "receive" ? "↓" : "↑"}
+            </div>
+            <div className="activity-item-main">
+              <div className="activity-item-title">
+                <strong>{tx.kind === "receive" ? "Received HNS" : "Sent HNS"}</strong>
+                <span
+                  className={`status-badge ${tx.status === "confirmed" ? "status-badge-success" : "status-badge-muted"}`}
+                >
+                  {tx.status}
+                </span>
+              </div>
+              <span className="muted">
+                {outputSummary(tx) || "Wallet transaction"} · <code>{tx.txid}</code>
+              </span>
+              {(tx.label || tx.memo) && (
+                <span className="activity-note">{tx.label || tx.memo}</span>
+              )}
+            </div>
+            <strong
+              className={`activity-amount ${tx.kind === "receive" ? "positive" : "negative"}`}
+            >
+              {tx.kind === "receive" ? "+" : "−"}
+              {formatHns(tx.amount)} HNS
+            </strong>
             <button type="button" className="link-button" onClick={() => void editMeta(tx)}>
               Edit
             </button>
-          </li>
+          </article>
         ))}
-      </ul>
+        {items.length === 0 && <p className="empty-state">No transactions recorded yet.</p>}
+      </div>
 
       {nextCursor && (
         <button type="button" className="button secondary" onClick={() => setCursor(nextCursor)}>

@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getRenewalThresholds, setRenewalThresholds } from "../api/notifications.js";
+import {
+  getRenewalThresholds,
+  getRevealThresholds,
+  setRenewalThresholds,
+  setRevealThresholds,
+} from "../api/notifications.js";
 import { useSession } from "../hooks/useSession.js";
 import { rootRoute } from "./root.js";
 
@@ -22,10 +27,19 @@ function NotificationSettingsPage() {
     enabled: session.data?.authenticated === true,
   });
 
+  const revealThresholdsQuery = useQuery({
+    queryKey: ["reveal-thresholds"],
+    queryFn: getRevealThresholds,
+    enabled: session.data?.authenticated === true,
+  });
+
   const [blocksRemaining, setBlocksRemaining] = useState("");
   const [daysRemaining, setDaysRemaining] = useState("");
   const [expirationRatio, setExpirationRatio] = useState("");
   const [saved, setSaved] = useState(false);
+
+  const [revealBlocksRemaining, setRevealBlocksRemaining] = useState("");
+  const [revealSaved, setRevealSaved] = useState(false);
 
   useEffect(() => {
     if (session.data && !session.data.authenticated) {
@@ -41,6 +55,12 @@ function NotificationSettingsPage() {
     }
   }, [thresholdsQuery.data]);
 
+  useEffect(() => {
+    if (revealThresholdsQuery.data) {
+      setRevealBlocksRemaining(String(revealThresholdsQuery.data.blocksRemaining));
+    }
+  }, [revealThresholdsQuery.data]);
+
   const saveMutation = useMutation({
     mutationFn: () =>
       setRenewalThresholds({
@@ -51,6 +71,14 @@ function NotificationSettingsPage() {
     onSuccess: () => {
       setSaved(true);
       queryClient.invalidateQueries({ queryKey: ["renewal-thresholds"] });
+    },
+  });
+
+  const saveRevealMutation = useMutation({
+    mutationFn: () => setRevealThresholds({ blocksRemaining: Number(revealBlocksRemaining) }),
+    onSuccess: () => {
+      setRevealSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["reveal-thresholds"] });
     },
   });
 
@@ -68,7 +96,7 @@ function NotificationSettingsPage() {
       {saved && <div className="success-banner">Saved.</div>}
 
       <form
-        className="card"
+        className="card settings-form"
         onSubmit={(e) => {
           e.preventDefault();
           setSaved(false);
@@ -113,6 +141,39 @@ function NotificationSettingsPage() {
         </div>
         <button type="submit" className="button" disabled={saveMutation.isPending}>
           {saveMutation.isPending ? "Saving…" : "Save"}
+        </button>
+      </form>
+
+      <h1>Reveal deadline notification threshold</h1>
+      <p className="muted">
+        A name you've bid on is flagged once its reveal window closes within this many blocks.
+        Missing the reveal window forfeits the entire locked-up bid, so keep this comfortably ahead
+        of how often you check the wallet.
+      </p>
+
+      {revealSaved && <div className="success-banner">Saved.</div>}
+
+      <form
+        className="card settings-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setRevealSaved(false);
+          saveRevealMutation.mutate();
+        }}
+      >
+        <div className="field">
+          <label htmlFor="reveal-threshold-blocks">Blocks remaining</label>
+          <input
+            id="reveal-threshold-blocks"
+            type="number"
+            min={1}
+            required
+            value={revealBlocksRemaining}
+            onChange={(e) => setRevealBlocksRemaining(e.target.value)}
+          />
+        </div>
+        <button type="submit" className="button" disabled={saveRevealMutation.isPending}>
+          {saveRevealMutation.isPending ? "Saving…" : "Save"}
         </button>
       </form>
     </main>
