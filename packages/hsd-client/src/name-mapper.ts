@@ -37,8 +37,15 @@ function isFinalizable(stats: Record<string, number> | null): boolean {
   return stats !== null && (stats.blocksUntilValidFinalize ?? 1) <= 0;
 }
 
+/**
+ * hsd's `expired` flag is a one-way ratchet: `NameState.maybeExpire()` sets it `true` and never
+ * clears it again, even once the name is reopened into a fresh lifecycle, bid on, or registered
+ * (verified against hsd's `chain.js`/`namestate.js` — only the height-driven `state` enum reflects
+ * the *current* phase). So it must only be trusted while `state` itself says the name is sitting
+ * CLOSED/LOCKED with no winner; otherwise a name mid-bidding (or already owned) after a prior
+ * expiry would show as permanently "expired".
+ */
 export function toNameState(raw: RawName): NameState {
-  if (raw.expired) return "expired";
   if (raw.state === "REVOKED") return "revoked";
   if (raw.transfer > 0) return "transferring";
 
@@ -51,9 +58,10 @@ export function toNameState(raw: RawName): NameState {
       return "revealing";
     case "LOCKED":
     case "CLOSED":
-      return raw.registered ? "owned" : "closed";
+      if (raw.registered) return "owned";
+      return raw.expired ? "expired" : "closed";
     default:
-      return "closed";
+      return raw.expired ? "expired" : "closed";
   }
 }
 

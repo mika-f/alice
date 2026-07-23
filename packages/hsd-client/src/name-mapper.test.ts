@@ -77,11 +77,22 @@ describe("toNameState", () => {
     ).toBe("transferring");
   });
 
-  it("prioritizes expired over every other signal", () => {
-    expect(toNameState(baseName({ state: "REVOKED", expired: true }))).toBe("expired");
-    expect(toNameState(baseName({ state: "CLOSED", registered: true, expired: true }))).toBe(
+  it("reports expired only when currently closed with no winner", () => {
+    expect(toNameState(baseName({ state: "CLOSED", registered: false, expired: true }))).toBe(
       "expired",
     );
+  });
+
+  it("ignores a stale expired flag once the name is active or owned again", () => {
+    // hsd never clears `expired` back to false after a reopen, so an active/owned name must
+    // never be shown as expired just because it happened to expire earlier in its history.
+    expect(toNameState(baseName({ state: "OPENING", expired: true }))).toBe("opening");
+    expect(toNameState(baseName({ state: "BIDDING", expired: true }))).toBe("bidding");
+    expect(toNameState(baseName({ state: "REVEAL", expired: true }))).toBe("revealing");
+    expect(toNameState(baseName({ state: "REVOKED", expired: true }))).toBe("revoked");
+    expect(
+      toNameState(baseName({ state: "CLOSED", registered: true, expired: true, owner: AN_OWNER })),
+    ).toBe("owned");
   });
 });
 
