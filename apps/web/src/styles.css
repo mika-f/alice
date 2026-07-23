@@ -659,6 +659,169 @@ p {
   font-size: 12px;
   font-weight: 700;
 }
+.name-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 11px;
+  color: #71827b;
+  font-size: 12px;
+  font-weight: 700;
+}
+.name-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 11px;
+}
+.name-title-row h1 {
+  overflow-wrap: anywhere;
+}
+.name-detail-label {
+  margin: 8px 0 0;
+  color: #5a7168;
+  font-size: 14px;
+}
+.name-explorer-link {
+  flex: none;
+}
+.name-overview-card {
+  margin-top: 0;
+}
+.name-overview-card .section-heading,
+.name-actions-card .section-heading,
+.card > .section-heading:first-child {
+  margin: 0 0 22px;
+}
+.name-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid #edf1ee;
+}
+.name-detail-grid > div {
+  min-width: 0;
+  padding: 17px 18px 17px 0;
+  border-bottom: 1px solid #edf1ee;
+}
+.name-detail-grid > div:not(:nth-child(3n + 1)) {
+  padding-left: 18px;
+  border-left: 1px solid #edf1ee;
+}
+.name-detail-grid dt {
+  margin-bottom: 7px;
+  color: #81908a;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.name-detail-grid dd {
+  min-width: 0;
+  margin: 0;
+  color: #213c32;
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.name-detail-grid dd small {
+  display: block;
+  margin-top: 4px;
+  color: #84918d;
+  font-size: 11px;
+  font-weight: 500;
+}
+.name-detail-grid dd code {
+  color: #4d6b60;
+}
+.name-detail-wide {
+  grid-column: span 3;
+}
+.detail-capitalized {
+  text-transform: capitalize;
+}
+.name-notes {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-top: 21px;
+}
+.name-notes .eyebrow {
+  margin-bottom: 5px;
+}
+.name-notes p {
+  margin: 0;
+  color: #526b61;
+  font-size: 13px;
+}
+.name-state-opening,
+.name-state-bidding,
+.name-state-revealing {
+  color: #95631e;
+  background: #fff5df;
+}
+.name-state-closed,
+.name-state-expired,
+.name-state-revoked {
+  color: #a34d49;
+  background: #fff0ed;
+}
+.name-state-owned {
+  color: #19704f;
+  background: #e8f7ef;
+}
+.dns-record-list,
+.auction-history-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.dns-record-list {
+  overflow: hidden;
+  border: 1px solid #e5ebe6;
+  border-radius: 11px;
+}
+.dns-record-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf1ee;
+}
+.dns-record-list li:last-child {
+  border-bottom: 0;
+}
+.dns-record-number {
+  flex: none;
+  color: #97a59f;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.raw-resource {
+  margin: 15px 0 0;
+}
+.auction-history-list {
+  display: grid;
+  gap: 8px;
+}
+.auction-history-list li {
+  padding: 12px 14px;
+  color: #40584f;
+  background: #f8faf8;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.card > p > strong:first-child {
+  color: #385549;
+}
 .notification-list,
 .audit-list {
   margin: 0 !important;
@@ -849,6 +1012,20 @@ p {
   .settings-form {
     padding: 21px;
   }
+  .name-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .name-detail-grid > div:not(:nth-child(3n + 1)) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .name-detail-grid > div:nth-child(even) {
+    padding-left: 18px;
+    border-left: 1px solid #edf1ee;
+  }
+  .name-detail-wide {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 420px) {
   .brand small {
@@ -874,5 +1051,25 @@ p {
   }
   h1 {
     font-size: 25px;
+  }
+  .name-detail-header,
+  .name-notes {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .name-explorer-link {
+    align-self: flex-start;
+  }
+  .name-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .name-detail-grid > div,
+  .name-detail-grid > div:nth-child(even) {
+    padding-right: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
+  .name-detail-wide {
+    grid-column: auto;
   }
 }
