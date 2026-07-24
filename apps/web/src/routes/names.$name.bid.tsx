@@ -157,8 +157,14 @@ function NameBidPage() {
         </div>
       )}
 
-      <div className="card">
-        <p className="muted">
+      <section className="card bid-form-card" aria-labelledby="bid-details-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Sealed bid</span>
+            <h2 id="bid-details-heading">Set your bid</h2>
+          </div>
+        </div>
+        <p className="muted bid-form-intro">
           Your bid amount stays hidden from other bidders until you reveal it. The lockup (what you
           publicly commit) is fully locked on-chain until reveal — missing the reveal window
           forfeits the entire lockup, not just the bid.
@@ -180,7 +186,7 @@ function NameBidPage() {
           />
         </div>
 
-        <label className="field-row">
+        <label className="option-toggle bid-privacy-toggle">
           <input
             type="checkbox"
             checked={showAdvanced}
@@ -189,7 +195,10 @@ function NameBidPage() {
               setPreview(null);
             }}
           />
-          Increase lockup for extra privacy
+          <span className="option-toggle-copy">
+            <strong>Increase lockup for extra privacy</strong>
+            <span>Set a higher public lockup while keeping your bid amount private.</span>
+          </span>
         </label>
 
         {showAdvanced && (
@@ -213,14 +222,16 @@ function NameBidPage() {
         )}
 
         {!preview ? (
-          <button
-            type="button"
-            className="button"
-            disabled={!bidValid || !lockupValid || previewMutation.isPending}
-            onClick={() => previewMutation.mutate()}
-          >
-            {previewMutation.isPending ? "Estimating…" : "Estimate fee"}
-          </button>
+          <div className="bid-form-actions">
+            <button
+              type="button"
+              className="button"
+              disabled={!bidValid || !lockupValid || previewMutation.isPending}
+              onClick={() => previewMutation.mutate()}
+            >
+              {previewMutation.isPending ? "Estimating…" : "Estimate fee"}
+            </button>
+          </div>
         ) : (
           <>
             <div className="success-banner">
@@ -253,7 +264,7 @@ function NameBidPage() {
             </div>
           </>
         )}
-      </div>
+      </section>
     </main>
   );
 }

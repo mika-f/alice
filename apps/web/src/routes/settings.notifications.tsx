@@ -144,38 +144,45 @@ function NotificationSettingsPage() {
         </button>
       </form>
 
-      <h1>Reveal deadline notification threshold</h1>
-      <p className="muted">
-        A name you've bid on is flagged once its reveal window closes within this many blocks.
-        Missing the reveal window forfeits the entire locked-up bid, so keep this comfortably ahead
-        of how often you check the wallet.
-      </p>
-
-      {revealSaved && <div className="success-banner">Saved.</div>}
-
-      <form
-        className="card settings-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setRevealSaved(false);
-          saveRevealMutation.mutate();
-        }}
-      >
-        <div className="field">
-          <label htmlFor="reveal-threshold-blocks">Blocks remaining</label>
-          <input
-            id="reveal-threshold-blocks"
-            type="number"
-            min={1}
-            required
-            value={revealBlocksRemaining}
-            onChange={(e) => setRevealBlocksRemaining(e.target.value)}
-          />
+      <section className="settings-section" aria-labelledby="reveal-threshold-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Auction protection</span>
+            <h2 id="reveal-threshold-heading">Reveal deadline threshold</h2>
+          </div>
         </div>
-        <button type="submit" className="button" disabled={saveRevealMutation.isPending}>
-          {saveRevealMutation.isPending ? "Saving…" : "Save"}
-        </button>
-      </form>
+        <p className="muted">
+          A name you've bid on is flagged once its reveal window closes within this many blocks.
+          Missing the reveal window forfeits the entire locked-up bid, so keep this comfortably
+          ahead of how often you check the wallet.
+        </p>
+
+        {revealSaved && <div className="success-banner">Saved.</div>}
+
+        <form
+          className="card settings-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setRevealSaved(false);
+            saveRevealMutation.mutate();
+          }}
+        >
+          <div className="field">
+            <label htmlFor="reveal-threshold-blocks">Blocks remaining</label>
+            <input
+              id="reveal-threshold-blocks"
+              type="number"
+              min={1}
+              required
+              value={revealBlocksRemaining}
+              onChange={(e) => setRevealBlocksRemaining(e.target.value)}
+            />
+          </div>
+          <button type="submit" className="button" disabled={saveRevealMutation.isPending}>
+            {saveRevealMutation.isPending ? "Saving…" : "Save"}
+          </button>
+        </form>
+      </section>
     </main>
   );
 }

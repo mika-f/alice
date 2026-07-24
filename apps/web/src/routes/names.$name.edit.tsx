@@ -359,23 +359,31 @@ function NameEditPage() {
         </div>
       )}
 
-      <div className="card">
-        <h1>Records</h1>
+      <section className="card dns-editor-card" aria-labelledby="dns-records-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">On-chain records</span>
+            <h2 id="dns-records-heading">DNS records</h2>
+          </div>
+          <span className="muted">{currentRecords.length} total</span>
+        </div>
         {currentRecords.length === 0 && <p className="muted">No records yet.</p>}
         {currentRecords.map((record, index) => (
-          <div className="card" key={index} style={{ background: "#f9fafb" }}>
-            <div className="field-row">
-              <strong>{record.type}</strong>
-              <button type="button" className="link-button" onClick={() => moveRecord(index, -1)}>
-                Move up
-              </button>
-              <button type="button" className="link-button" onClick={() => moveRecord(index, 1)}>
-                Move down
-              </button>
-              <button type="button" className="link-button" onClick={() => removeRecord(index)}>
-                Remove
-              </button>
-            </div>
+          <article className="dns-record-editor" key={index}>
+            <header className="dns-record-editor-header">
+              <span className="status-badge status-badge-muted">{record.type}</span>
+              <div className="dns-record-actions">
+                <button type="button" className="link-button" onClick={() => moveRecord(index, -1)}>
+                  Move up
+                </button>
+                <button type="button" className="link-button" onClick={() => moveRecord(index, 1)}>
+                  Move down
+                </button>
+                <button type="button" className="link-button" onClick={() => removeRecord(index)}>
+                  Remove
+                </button>
+              </div>
+            </header>
             <RecordFields
               record={record}
               onChange={(next) => {
@@ -395,53 +403,66 @@ function NameEditPage() {
                   {i.message}
                 </p>
               ))}
-          </div>
+          </article>
         ))}
 
-        <div className="field-row" style={{ flexWrap: "wrap" }}>
-          {RECORD_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              className="button secondary"
-              onClick={() => addRecord(type)}
-            >
-              Add {type}
-            </button>
-          ))}
+        <div className="dns-add-records">
+          <span className="eyebrow">Add a record</span>
+          <div className="field-row">
+            {RECORD_TYPES.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className="button secondary"
+                onClick={() => addRecord(type)}
+              >
+                Add {type}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
       {(deletingAll || removingLastNs) && (
         <div className="error-banner">
           {deletingAll && <p>Warning: this removes every record from {name}.</p>}
           {removingLastNs && <p>Warning: this removes the last NS record from {name}.</p>}
-          <label className="field-row">
+          <label className="option-toggle safety-toggle">
             <input
               type="checkbox"
               checked={confirmSafety}
               onChange={(e) => setConfirmSafety(e.target.checked)}
             />
-            I understand and want to proceed
+            <span className="option-toggle-copy">
+              <strong>I understand and want to proceed</strong>
+            </span>
           </label>
         </div>
       )}
 
-      <div className="card">
-        <h1>Confirmation</h1>
-        <label className="field-row">
+      <section className="card name-confirmation-card" aria-labelledby="dns-confirmation-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Review before broadcast</span>
+            <h2 id="dns-confirmation-heading">Confirmation</h2>
+          </div>
+        </div>
+        <label className="option-toggle confirmation-toggle">
           <input
             type="checkbox"
             checked={requireNameReentry}
             onChange={(e) => setRequireNameReentry(e.target.checked)}
           />
-          Require typing the name to confirm
+          <span className="option-toggle-copy">
+            <strong>Require typing the name to confirm</strong>
+            <span>Type “{name}” below to enable the preview.</span>
+          </span>
         </label>
         {requireNameReentry && (
-          <div className="field">
-            <label htmlFor="name-reentry">Type "{name}" to confirm</label>
+          <div className="field name-reentry-field">
             <input
               id="name-reentry"
+              aria-label={`Type ${name} to confirm`}
               value={nameReentry}
               onChange={(e) => setNameReentry(e.target.value)}
             />
@@ -509,7 +530,7 @@ function NameEditPage() {
             </div>
           </>
         )}
-      </div>
+      </section>
     </main>
   );
 }

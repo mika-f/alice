@@ -100,7 +100,7 @@ function ExternalNotificationSettingsPage() {
       )}
 
       <form
-        className="card settings-form"
+        className="card settings-form notification-channels-form"
         onSubmit={(e) => {
           e.preventDefault();
           setSaved(false);
@@ -108,61 +108,75 @@ function ExternalNotificationSettingsPage() {
           saveMutation.mutate();
         }}
       >
-        <h1>ntfy</h1>
-        <div className="field">
-          <label htmlFor="ntfy-enabled">
+        <section className="notification-channel" aria-labelledby="ntfy-heading">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Push notification</span>
+              <h2 id="ntfy-heading">ntfy</h2>
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="ntfy-enabled">
+              <input
+                id="ntfy-enabled"
+                type="checkbox"
+                checked={ntfyEnabled}
+                onChange={(e) => setNtfyEnabled(e.target.checked)}
+              />{" "}
+              Enabled
+            </label>
+          </div>
+          <div className="field">
+            <label htmlFor="ntfy-url">
+              Topic URL{" "}
+              {query.data?.ntfy.configured && (
+                <span className="muted">(configured — leave blank to keep it)</span>
+              )}
+            </label>
             <input
-              id="ntfy-enabled"
-              type="checkbox"
-              checked={ntfyEnabled}
-              onChange={(e) => setNtfyEnabled(e.target.checked)}
-            />{" "}
-            Enabled
-          </label>
-        </div>
-        <div className="field">
-          <label htmlFor="ntfy-url">
-            Topic URL{" "}
-            {query.data?.ntfy.configured && (
-              <span className="muted">(configured — leave blank to keep it)</span>
-            )}
-          </label>
-          <input
-            id="ntfy-url"
-            type="url"
-            placeholder="https://ntfy.sh/my-topic"
-            value={ntfyUrl}
-            onChange={(e) => setNtfyUrl(e.target.value)}
-          />
-        </div>
+              id="ntfy-url"
+              type="url"
+              placeholder="https://ntfy.sh/my-topic"
+              value={ntfyUrl}
+              onChange={(e) => setNtfyUrl(e.target.value)}
+            />
+          </div>
+        </section>
 
-        <h1>Discord webhook</h1>
-        <div className="field">
-          <label htmlFor="discord-enabled">
+        <section className="notification-channel" aria-labelledby="discord-heading">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Webhook notification</span>
+              <h2 id="discord-heading">Discord</h2>
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="discord-enabled">
+              <input
+                id="discord-enabled"
+                type="checkbox"
+                checked={discordEnabled}
+                onChange={(e) => setDiscordEnabled(e.target.checked)}
+              />{" "}
+              Enabled
+            </label>
+          </div>
+          <div className="field">
+            <label htmlFor="discord-url">
+              Webhook URL{" "}
+              {query.data?.discord.configured && (
+                <span className="muted">(configured — leave blank to keep it)</span>
+              )}
+            </label>
             <input
-              id="discord-enabled"
-              type="checkbox"
-              checked={discordEnabled}
-              onChange={(e) => setDiscordEnabled(e.target.checked)}
-            />{" "}
-            Enabled
-          </label>
-        </div>
-        <div className="field">
-          <label htmlFor="discord-url">
-            Webhook URL{" "}
-            {query.data?.discord.configured && (
-              <span className="muted">(configured — leave blank to keep it)</span>
-            )}
-          </label>
-          <input
-            id="discord-url"
-            type="url"
-            placeholder="https://discord.com/api/webhooks/…"
-            value={discordUrl}
-            onChange={(e) => setDiscordUrl(e.target.value)}
-          />
-        </div>
+              id="discord-url"
+              type="url"
+              placeholder="https://discord.com/api/webhooks/…"
+              value={discordUrl}
+              onChange={(e) => setDiscordUrl(e.target.value)}
+            />
+          </div>
+        </section>
 
         <div className="field-row">
           <button type="submit" className="button" disabled={saveMutation.isPending}>
