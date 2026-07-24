@@ -220,3 +220,11 @@ The initial release excludes the following (see [docs/01-SPECIFICATION.md §2.2]
 - Starting, stopping, auto-updating, or backing up `hsd` itself
 - Desktop app or official Safari support
 - Web Push notifications (the `push_subscriptions` table exists in the schema but is unused)
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Donate
+
+If you find this project useful, consider donating HNS to support its development: `hs1qvxqwx2m852vwkg3tqg38qxxyexrw5z9f8arlpm`

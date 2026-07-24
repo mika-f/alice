@@ -217,3 +217,11 @@ hsd 接続設定はセットアップ後に UI（`/settings/connection`）から
 - hsd の起動・停止・自動更新・データバックアップ管理
 - デスクトップアプリ、Safari の正式対応
 - Web Push 通知（`push_subscriptions` テーブルはスキーマ上存在しますが未使用です）
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## 寄付
+
+もしこのプロジェクトが役に立った場合、開発支援のために HNS を寄付していただけると幸いです: `hs1qvxqwx2m852vwkg3tqg38qxxyexrw5z9f8arlpm`
