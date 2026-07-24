@@ -47,6 +47,9 @@ _(For the English version, see [README.en.md](README.en.md) / 英語版は [READ
 - 送金（手数料プレビュー → 確認 → 再認証、Idempotency Key による二重送信防止、送金後の自動再ロック）
 - ページング対応のトランザクション履歴（Covenant 種別のラベル表示）
 
+![](https://images.natsuneko.com/045b8071dfb7d482a39429dbb3141868431e147d0aa295e644c5c9eec2faad5c.png)
+![](https://images.natsuneko.com/9027f9506f0ccb1a7172e7e7dc41058ce446985996915a547c6e1f8a43ec7c92.png)
+
 ### Name 管理
 
 - 保有 Name 一覧（フィルタ・ソート・検索、すべてクライアント側処理）
@@ -54,6 +57,8 @@ _(For the English version, see [README.en.md](README.en.md) / 英語版は [READ
 - Renewal（個別・一括、ロック検知時は一括処理を安全に中断）
 - Transfer / Finalize
 - Revoke（パスワード + TOTP/リカバリーコードの再入力を必須とする Danger Zone）
+
+![](https://images.natsuneko.com/2aeb00576a6ace0ce00061a33d7303962988a84b93a9e368a5a60258e6646539.png)
 
 ### Name オークション
 
@@ -66,6 +71,8 @@ _(For the English version, see [README.en.md](README.en.md) / 英語版は [READ
 - ダッシュボードの警告表示、アプリ内通知（更新期限・失効接近、Transfer 状態変化、送金確定/失敗、Node/Wallet 接続断など）
 - 外部通知連携（ntfy / Discord Webhook） — Seed・秘密鍵・API Key・完全な残高などの機微情報は通知に含めない設計
 - 監査ログ（すべての書き込み系操作の成功・失敗を記録、リクエストボディは記録しない）
+
+![](https://images.natsuneko.com/8eb2561df60d41a8aec5f22a1ec277375eee77a1d598ac98b7b900d0c99afc7a.png)
 
 ### 配布
 
