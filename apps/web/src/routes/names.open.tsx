@@ -150,7 +150,16 @@ function NameOpenPage() {
         </div>
       )}
 
-      <div className="card">
+      <section className="card name-open-card" aria-labelledby="name-open-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Start an auction</span>
+            <h2 id="name-open-heading">Choose a Name</h2>
+          </div>
+        </div>
+        <p className="muted name-open-intro">
+          Check whether a Name can be opened before estimating the transaction fee.
+        </p>
         <div className="field">
           <label htmlFor="open-name">Name</label>
           <input
@@ -164,17 +173,23 @@ function NameOpenPage() {
             }}
           />
         </div>
-        <button
-          type="button"
-          className="button secondary"
-          disabled={!name || availabilityMutation.isPending}
-          onClick={() => availabilityMutation.mutate()}
-        >
-          {availabilityMutation.isPending ? "Checking…" : "Check availability"}
-        </button>
+        <div className="name-open-actions">
+          <button
+            type="button"
+            className="button secondary"
+            disabled={!name || availabilityMutation.isPending}
+            onClick={() => availabilityMutation.mutate()}
+          >
+            {availabilityMutation.isPending ? "Checking…" : "Check availability"}
+          </button>
+        </div>
 
         {availability && (
-          <div className={availability.available ? "success-banner" : "error-banner"}>
+          <div
+            className={`open-availability-result ${
+              availability.available ? "success-banner" : "error-banner"
+            }`}
+          >
             {availability.available && <p>{availability.name} is available to open.</p>}
             {availability.reserved && (
               <p>
@@ -196,20 +211,22 @@ function NameOpenPage() {
 
         {availability?.available &&
           (!preview ? (
-            <button
-              type="button"
-              className="button"
-              disabled={previewMutation.isPending}
-              onClick={() => previewMutation.mutate()}
-            >
-              {previewMutation.isPending ? "Estimating…" : "Estimate fee"}
-            </button>
+            <div className="name-open-actions">
+              <button
+                type="button"
+                className="button"
+                disabled={previewMutation.isPending}
+                onClick={() => previewMutation.mutate()}
+              >
+                {previewMutation.isPending ? "Estimating…" : "Estimate fee"}
+              </button>
+            </div>
           ) : (
             <>
               <div className="success-banner">
                 <p>Fee: {preview.fee} dollarydoos</p>
               </div>
-              <div className="field-row">
+              <div className="field-row name-open-actions">
                 <button type="button" className="button secondary" onClick={() => setPreview(null)}>
                   Back
                 </button>
@@ -224,7 +241,7 @@ function NameOpenPage() {
               </div>
             </>
           ))}
-      </div>
+      </section>
     </main>
   );
 }

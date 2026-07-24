@@ -962,6 +962,28 @@ p {
 .bid-form-actions {
   padding-top: 4px;
 }
+.name-open-card {
+  max-width: 680px;
+}
+.name-open-card > .section-heading {
+  margin: 0 0 10px;
+}
+.name-open-intro {
+  margin: 0 0 24px;
+}
+.name-open-actions {
+  margin-top: 4px;
+}
+.open-availability-result {
+  margin-top: 18px;
+}
+.open-availability-result p,
+.name-open-card > .success-banner p {
+  margin: 0;
+}
+.open-availability-result + .name-open-actions {
+  margin-top: 18px;
+}
 .safety-toggle {
   max-width: 560px;
   margin-top: 12px;
