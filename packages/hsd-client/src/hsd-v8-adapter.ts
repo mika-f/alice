@@ -264,17 +264,30 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     return raw.map(toOwnedName);
   }
 
+  /**
+   * `raw.data` (from the wallet's `/wallet/:id/auction/:name`) can be permanently stuck empty for
+   * names this wallet acquired via TRANSFER/FINALIZE without ever having tracked their earlier
+   * lifecycle itself — hsd's wallet txdb rebuilds the namestate from the FINALIZE covenant alone in
+   * that case, and that covenant carries no resource payload (see hsd's wallet/txdb.js
+   * `connectNames()`, the FINALIZE branch comment "Cannot get data or highest"). The node's
+   * chain-tracked namestate has no such gap — it's built incrementally from every covenant since
+   * genesis — so it's used as the source of truth for whether a resource exists, instead of gating
+   * on the wallet's own (possibly stale) copy.
+   */
   async getName(name: string): Promise<NameDetails> {
     const raw = await this.getAuctionRecord(name);
 
+    const nodeInfo = rawNameInfoSchema.parse(await this.node.rpc("getnameinfo", [name])).info;
+    const dataHex = nodeInfo && nodeInfo.data.length > 0 ? nodeInfo.data : raw.data;
+
     const resource =
-      raw.data.length > 0
+      dataHex.length > 0
         ? rawNameResourceSchema.nullable().parse(await this.node.rpc("getnameresource", [name]))
         : null;
 
     const ownership = await this.resolveOwnership(raw.owner);
 
-    return toNameDetails(raw, resource, ownership);
+    return toNameDetails({ ...raw, data: dataHex }, resource, ownership);
   }
 
   /**
