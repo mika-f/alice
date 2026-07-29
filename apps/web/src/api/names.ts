@@ -64,6 +64,27 @@ export function getName(name: string): Promise<NameDetailsResponse> {
   return apiFetch(`/api/names/${encodeURIComponent(name)}`);
 }
 
+export interface NameAutoBidSettingsResponse {
+  enabled: boolean;
+  budget: string;
+  spent: string;
+  remaining: string;
+}
+
+export function getNameAutoBidSettings(name: string): Promise<NameAutoBidSettingsResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/auto-bid`);
+}
+
+export function setNameAutoBidSettings(
+  name: string,
+  input: { enabled: boolean; budget: string },
+): Promise<NameAutoBidSettingsResponse> {
+  return apiFetch(`/api/names/${encodeURIComponent(name)}/auto-bid`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
 export function getNameResource(name: string): Promise<NameResourceResponse | null> {
   return apiFetch(`/api/names/${encodeURIComponent(name)}/resource`);
 }

@@ -12,12 +12,20 @@ import {
 import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { isSupportedHsdVersion } from "@alice-hns-wallet/hsd-client";
 import type { Db } from "../db/client.js";
-import { listWatchedBroadcasts, unwatchBroadcast, watchBroadcast } from "./broadcast-watch-service.js";
+import {
+  listWatchedBroadcasts,
+  unwatchBroadcast,
+  watchBroadcast,
+} from "./broadcast-watch-service.js";
 import {
   createNotification,
   getAutoRevealSettings,
+  getAutoBidSettings,
   getRenewalThresholds,
   getRevealThresholds,
+  markAutoBidResponse,
+  recordAutoBidSpend,
+  scheduleAutoBid,
 } from "./notification-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { HsdConnectionManager } from "./hsd-connection-manager.js";
@@ -65,6 +73,8 @@ export class StatusPoller {
   private readonly lastTransferState = new Map<string, TransferState>();
   private readonly lastRevealCategory = new Map<string, RevealCategory>();
   private readonly autoRevealingNames = new Set<string>();
+  private readonly autoBiddingNames = new Set<string>();
+  private autoBidExecutionActive = false;
 
   constructor(
     private readonly hsdManager: HsdConnectionManager,
@@ -213,6 +223,97 @@ export class StatusPoller {
       this.lastTransferState.set(item.name, item.transferState);
 
       await this.checkRevealNotification(hsd, item, revealThresholds, autoRevealSettings);
+      await this.checkAutoBid(hsd, item);
+    }
+  }
+
+  /**
+   * Bid values are blinded until reveal. The public lockup is therefore the only chain-visible
+   * competitor amount we can safely react to; using it makes the automatic bid conservative.
+   */
+  private async checkAutoBid(hsd: HsdV8Adapter, item: OwnedName): Promise<void> {
+    if (item.state !== "bidding" || !this.encryptionKey) return;
+    const settings = getAutoBidSettings(this.db!, this.encryptionKey);
+    const nameSettings = settings.names[item.name];
+    if (!nameSettings?.enabled) return;
+
+    const detail = await hsd.getName(item.name);
+    if (!detail.bids.some((bid) => bid.own)) return;
+    const competitors = detail.bids.filter((bid) => !bid.own);
+    if (competitors.length === 0) return;
+
+    // Height + public lockup + count identifies the visible set, including equal bids.
+    const fingerprint = competitors
+      .map((bid) => `${bid.height}:${bid.lockup}`)
+      .sort()
+      .join(",");
+    if (settings.respondedTo[item.name] === fingerprint) return;
+
+    const existing = settings.scheduled[item.name];
+    if (!existing || existing.fingerprint !== fingerprint) {
+      const targetHeight =
+        settings.timing === "next-block"
+          ? detail.blockHeight + 1
+          : detail.blockHeight + Math.max(item.blocksRemaining - 2, 0);
+      scheduleAutoBid(this.db!, this.encryptionKey, item.name, fingerprint, targetHeight);
+      return;
+    }
+    if (detail.blockHeight < existing.targetHeight) return;
+    if (this.autoBiddingNames.has(item.name) || this.autoBidExecutionActive) return;
+
+    const highestCompetitorLockup = competitors.reduce(
+      (highest, bid) => (bid.lockup > highest ? bid.lockup : highest),
+      0n,
+    );
+    const amount = highestCompetitorLockup + BigInt(settings.increment);
+    const remaining = BigInt(nameSettings.budget) - BigInt(nameSettings.spent);
+    if (amount > remaining) {
+      markAutoBidResponse(this.db!, this.encryptionKey, item.name, fingerprint);
+      this.notify({
+        type: "auto-bid-budget-reached",
+        name: item.name,
+        message: `${item.name}: automatic bid skipped because it exceeds your remaining automatic-bid budget`,
+      });
+      recordAudit(this.db!, {
+        action: "name.auto_bid",
+        target: item.name,
+        outcome: "failure",
+        detail: "Budget exceeded",
+      });
+      return;
+    }
+
+    let unlocked = false;
+    this.autoBiddingNames.add(item.name);
+    this.autoBidExecutionActive = true;
+    try {
+      const wallet = await hsd.getWalletStatus();
+      if (wallet.locked) {
+        if (settings.passphrase === null)
+          throw new Error("Wallet is locked and no passphrase is configured");
+        await hsd.unlock(settings.passphrase, 60);
+        unlocked = true;
+      }
+      const result = await hsd.bidName({ name: item.name, bid: amount, lockup: amount });
+      watchBroadcast(this.db!, result.txid, item.name);
+      recordAutoBidSpend(this.db!, this.encryptionKey, item.name, fingerprint, amount);
+      this.notify({
+        type: "auto-bid-placed",
+        name: item.name,
+        message: `${item.name}: automatic bid broadcast`,
+      });
+      recordAudit(this.db!, { action: "name.auto_bid", target: item.name, outcome: "success" });
+    } catch {
+      recordAudit(this.db!, {
+        action: "name.auto_bid",
+        target: item.name,
+        outcome: "failure",
+        detail: "Automatic bid failed",
+      });
+    } finally {
+      if (unlocked) await hsd.lock().catch(() => undefined);
+      this.autoBiddingNames.delete(item.name);
+      this.autoBidExecutionActive = false;
     }
   }
 
@@ -263,14 +364,19 @@ export class StatusPoller {
   }
 
   /** Unlocks only for the broadcast and locks again through `revealName`; failures retry next poll. */
-  private async autoReveal(hsd: HsdV8Adapter, name: string, passphrase: string | null): Promise<void> {
+  private async autoReveal(
+    hsd: HsdV8Adapter,
+    name: string,
+    passphrase: string | null,
+  ): Promise<void> {
     if (this.autoRevealingNames.has(name)) return;
     this.autoRevealingNames.add(name);
     let unlockedByAutoReveal = false;
     try {
       const status = await hsd.getWalletStatus();
       if (status.locked) {
-        if (passphrase === null) throw new Error("Wallet is locked and no passphrase is configured");
+        if (passphrase === null)
+          throw new Error("Wallet is locked and no passphrase is configured");
         await hsd.unlock(passphrase, 60);
         unlockedByAutoReveal = true;
       }

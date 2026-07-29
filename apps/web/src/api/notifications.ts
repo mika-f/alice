@@ -61,3 +61,21 @@ export function setAutoRevealSettings(input: {
 }): Promise<AutoRevealSettingsResponse> {
   return apiFetch("/api/settings/auto-reveal", { method: "PUT", body: JSON.stringify(input) });
 }
+
+export interface AutoBidSettingsResponse {
+  timing: "next-block" | "before-reveal";
+  increment: string;
+  passphraseConfigured: boolean;
+}
+
+export function getAutoBidSettings(): Promise<AutoBidSettingsResponse> {
+  return apiFetch("/api/settings/auto-bid");
+}
+
+export function setAutoBidSettings(input: {
+  timing: "next-block" | "before-reveal";
+  increment: string;
+  passphrase: string;
+}): Promise<AutoBidSettingsResponse> {
+  return apiFetch("/api/settings/auto-bid", { method: "PUT", body: JSON.stringify(input) });
+}

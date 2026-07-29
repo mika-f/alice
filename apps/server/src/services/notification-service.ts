@@ -15,6 +15,7 @@ import { dispatchExternalNotification } from "./external-notification-service.js
 const RENEWAL_THRESHOLDS_KEY = "renewal_thresholds";
 const REVEAL_THRESHOLDS_KEY = "reveal_thresholds";
 const AUTO_REVEAL_SETTINGS_KEY = "auto_reveal_settings";
+const AUTO_BID_SETTINGS_KEY = "auto_bid_settings";
 
 export interface AutoRevealSettings {
   enabled: boolean;
@@ -25,6 +26,30 @@ export interface AutoRevealSettings {
 export interface AutoRevealSettingsStatus {
   enabled: boolean;
   passphraseConfigured: boolean;
+}
+
+export type AutoBidTiming = "next-block" | "before-reveal";
+export interface AutoBidSettings {
+  timing: AutoBidTiming;
+  increment: string;
+  passphrase: string | null;
+  names: Record<string, AutoBidNameSettings>;
+  /** A persisted fingerprint prevents retrying for the same visible competing bid after restart. */
+  respondedTo: Record<string, string>;
+  scheduled: Record<string, { fingerprint: string; targetHeight: number }>;
+}
+export interface AutoBidNameSettings {
+  enabled: boolean;
+  budget: string;
+  spent: string;
+}
+export interface AutoBidSettingsStatus {
+  timing: AutoBidTiming;
+  increment: string;
+  passphraseConfigured: boolean;
+}
+export interface AutoBidNameSettingsStatus extends AutoBidNameSettings {
+  remaining: string;
 }
 
 export interface CreateNotificationInput {
@@ -145,9 +170,7 @@ export function getAutoRevealSettings(db: Db, encryptionKey: string): AutoReveal
   }
 }
 
-export function toAutoRevealSettingsStatus(
-  input: AutoRevealSettings,
-): AutoRevealSettingsStatus {
+export function toAutoRevealSettingsStatus(input: AutoRevealSettings): AutoRevealSettingsStatus {
   return { enabled: input.enabled, passphraseConfigured: input.passphrase !== null };
 }
 
@@ -161,7 +184,7 @@ export function setAutoRevealSettings(
   // passphrase, while still supporting wallets which do not have one.
   const next: AutoRevealSettings = {
     enabled: input.enabled,
-    passphrase: input.enabled ? (input.passphrase || existing.passphrase) : null,
+    passphrase: input.enabled ? input.passphrase || existing.passphrase : null,
   };
   const value = encrypt(JSON.stringify(next), encryptionKey);
   const [row] = db.select().from(settings).where(eq(settings.key, AUTO_REVEAL_SETTINGS_KEY)).all();
@@ -171,4 +194,141 @@ export function setAutoRevealSettings(
     db.insert(settings).values({ key: AUTO_REVEAL_SETTINGS_KEY, value }).run();
   }
   return next;
+}
+
+const DEFAULT_AUTO_BID_SETTINGS: AutoBidSettings = {
+  timing: "next-block",
+  increment: "1000000",
+  passphrase: null,
+  names: {},
+  respondedTo: {},
+  scheduled: {},
+};
+
+export function getAutoBidSettings(db: Db, encryptionKey: string): AutoBidSettings {
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_BID_SETTINGS_KEY)).all();
+  if (!row) return DEFAULT_AUTO_BID_SETTINGS;
+  try {
+    const parsed = JSON.parse(decrypt(row.value, encryptionKey)) as Partial<AutoBidSettings>;
+    return {
+      ...DEFAULT_AUTO_BID_SETTINGS,
+      ...parsed,
+      passphrase: typeof parsed.passphrase === "string" ? parsed.passphrase : null,
+      names: parsed.names ?? {},
+      respondedTo: parsed.respondedTo ?? {},
+      scheduled: parsed.scheduled ?? {},
+    };
+  } catch {
+    return DEFAULT_AUTO_BID_SETTINGS;
+  }
+}
+
+function saveAutoBidSettings(db: Db, encryptionKey: string, value: AutoBidSettings): void {
+  const encrypted = encrypt(JSON.stringify(value), encryptionKey);
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_BID_SETTINGS_KEY)).all();
+  if (row)
+    db.update(settings)
+      .set({ value: encrypted })
+      .where(eq(settings.key, AUTO_BID_SETTINGS_KEY))
+      .run();
+  else db.insert(settings).values({ key: AUTO_BID_SETTINGS_KEY, value: encrypted }).run();
+}
+
+export function setAutoBidSettings(
+  db: Db,
+  encryptionKey: string,
+  input: Omit<AutoBidSettings, "passphrase" | "respondedTo" | "scheduled" | "names"> & {
+    passphrase: string;
+  },
+): AutoBidSettings {
+  const existing = getAutoBidSettings(db, encryptionKey);
+  const next: AutoBidSettings = {
+    ...input,
+    passphrase: input.passphrase || existing.passphrase,
+    names: existing.names,
+    respondedTo: existing.respondedTo,
+    scheduled: existing.scheduled,
+  };
+  saveAutoBidSettings(db, encryptionKey, next);
+  return next;
+}
+
+export function getAutoBidNameSettings(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+): AutoBidNameSettings {
+  return (
+    getAutoBidSettings(db, encryptionKey).names[name] ?? { enabled: false, budget: "0", spent: "0" }
+  );
+}
+
+export function setAutoBidNameSettings(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+  input: { enabled: boolean; budget: string },
+): AutoBidNameSettings {
+  const settings = getAutoBidSettings(db, encryptionKey);
+  const next = { enabled: input.enabled, budget: input.budget, spent: "0" };
+  settings.names[name] = next;
+  if (!next.enabled) {
+    delete settings.scheduled[name];
+    delete settings.respondedTo[name];
+  }
+  saveAutoBidSettings(db, encryptionKey, settings);
+  return next;
+}
+
+/** Stores that a particular public competing bid was handled (or deliberately skipped at budget). */
+export function markAutoBidResponse(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+  fingerprint: string,
+): void {
+  const settings = getAutoBidSettings(db, encryptionKey);
+  settings.respondedTo[name] = fingerprint;
+  delete settings.scheduled[name];
+  saveAutoBidSettings(db, encryptionKey, settings);
+}
+
+export function recordAutoBidSpend(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+  fingerprint: string,
+  amount: bigint,
+): void {
+  const settings = getAutoBidSettings(db, encryptionKey);
+  const nameSettings = settings.names[name];
+  if (!nameSettings) return;
+  nameSettings.spent = (BigInt(nameSettings.spent) + amount).toString();
+  settings.respondedTo[name] = fingerprint;
+  delete settings.scheduled[name];
+  saveAutoBidSettings(db, encryptionKey, settings);
+}
+
+export function scheduleAutoBid(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+  fingerprint: string,
+  targetHeight: number,
+): void {
+  const settings = getAutoBidSettings(db, encryptionKey);
+  settings.scheduled[name] = { fingerprint, targetHeight };
+  saveAutoBidSettings(db, encryptionKey, settings);
+}
+
+export function toAutoBidSettingsStatus(input: AutoBidSettings): AutoBidSettingsStatus {
+  return {
+    timing: input.timing,
+    increment: input.increment,
+    passphraseConfigured: input.passphrase !== null,
+  };
+}
+
+export function toAutoBidNameSettingsStatus(input: AutoBidNameSettings): AutoBidNameSettingsStatus {
+  return { ...input, remaining: (BigInt(input.budget) - BigInt(input.spent)).toString() };
 }

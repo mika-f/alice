@@ -27,6 +27,21 @@ export const autoRevealSettingsRequestSchema = z.object({
 
 export type AutoRevealSettingsRequestBody = z.infer<typeof autoRevealSettingsRequestSchema>;
 
+/** Amounts are decimal strings in Handshake's smallest unit, so the server never rounds money. */
+export const autoBidSettingsRequestSchema = z.object({
+  timing: z.enum(["next-block", "before-reveal"]),
+  increment: z.string().regex(/^[1-9][0-9]*$/),
+  passphrase: z.string().max(1024),
+});
+
+export type AutoBidSettingsRequestBody = z.infer<typeof autoBidSettingsRequestSchema>;
+
+export const nameAutoBidSettingsRequestSchema = z.object({
+  enabled: z.boolean(),
+  budget: z.string().regex(/^[1-9][0-9]*$/),
+});
+export type NameAutoBidSettingsRequestBody = z.infer<typeof nameAutoBidSettingsRequestSchema>;
+
 /**
  * `url` may be submitted empty to mean "leave the existing configured value unchanged" (so
  * toggling `enabled` doesn't force retyping a webhook URL the server already has); required only

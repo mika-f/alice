@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import {
   getRenewalThresholds,
   getAutoRevealSettings,
+  getAutoBidSettings,
   getRevealThresholds,
   setAutoRevealSettings,
+  setAutoBidSettings,
   setRenewalThresholds,
   setRevealThresholds,
 } from "../api/notifications.js";
+import { formatHns, parseHnsToSmallestUnit } from "../lib/hns.js";
 import { reauth } from "../api/auth.js";
 import { useSession } from "../hooks/useSession.js";
 import { rootRoute } from "./root.js";
@@ -41,6 +44,11 @@ function NotificationSettingsPage() {
     queryFn: getAutoRevealSettings,
     enabled: session.data?.authenticated === true,
   });
+  const autoBidQuery = useQuery({
+    queryKey: ["auto-bid-settings"],
+    queryFn: getAutoBidSettings,
+    enabled: session.data?.authenticated === true,
+  });
 
   const [blocksRemaining, setBlocksRemaining] = useState("");
   const [daysRemaining, setDaysRemaining] = useState("");
@@ -53,6 +61,11 @@ function NotificationSettingsPage() {
   const [autoRevealPassphrase, setAutoRevealPassphrase] = useState("");
   const [autoRevealAdminPassword, setAutoRevealAdminPassword] = useState("");
   const [autoRevealSaved, setAutoRevealSaved] = useState(false);
+  const [autoBidTiming, setAutoBidTiming] = useState<"next-block" | "before-reveal">("next-block");
+  const [autoBidIncrement, setAutoBidIncrement] = useState("1");
+  const [autoBidPassphrase, setAutoBidPassphrase] = useState("");
+  const [autoBidAdminPassword, setAutoBidAdminPassword] = useState("");
+  const [autoBidSaved, setAutoBidSaved] = useState(false);
 
   useEffect(() => {
     if (session.data && !session.data.authenticated) {
@@ -77,6 +90,11 @@ function NotificationSettingsPage() {
   useEffect(() => {
     if (autoRevealQuery.data) setAutoRevealEnabled(autoRevealQuery.data.enabled);
   }, [autoRevealQuery.data]);
+  useEffect(() => {
+    if (!autoBidQuery.data) return;
+    setAutoBidTiming(autoBidQuery.data.timing);
+    setAutoBidIncrement(formatHns(autoBidQuery.data.increment));
+  }, [autoBidQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -102,13 +120,32 @@ function NotificationSettingsPage() {
   const saveAutoRevealMutation = useMutation({
     mutationFn: async () => {
       await reauth({ method: "password", password: autoRevealAdminPassword });
-      return setAutoRevealSettings({ enabled: autoRevealEnabled, passphrase: autoRevealPassphrase });
+      return setAutoRevealSettings({
+        enabled: autoRevealEnabled,
+        passphrase: autoRevealPassphrase,
+      });
     },
     onSuccess: () => {
       setAutoRevealPassphrase("");
       setAutoRevealAdminPassword("");
       setAutoRevealSaved(true);
       queryClient.invalidateQueries({ queryKey: ["auto-reveal-settings"] });
+    },
+  });
+  const saveAutoBidMutation = useMutation({
+    mutationFn: async () => {
+      await reauth({ method: "password", password: autoBidAdminPassword });
+      return setAutoBidSettings({
+        timing: autoBidTiming,
+        increment: parseHnsToSmallestUnit(autoBidIncrement),
+        passphrase: autoBidPassphrase,
+      });
+    },
+    onSuccess: () => {
+      setAutoBidPassphrase("");
+      setAutoBidAdminPassword("");
+      setAutoBidSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["auto-bid-settings"] });
     },
   });
 
@@ -278,6 +315,80 @@ function NotificationSettingsPage() {
           </p>
           <button type="submit" className="button" disabled={saveAutoRevealMutation.isPending}>
             {saveAutoRevealMutation.isPending ? "Saving…" : "Save"}
+          </button>
+        </form>
+      </section>
+      <section className="settings-section" aria-labelledby="auto-bid-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Auction protection</span>
+            <h2 id="auto-bid-heading">Automatic competitive bidding</h2>
+          </div>
+        </div>
+        <p className="muted">
+          For auctions where this wallet has already placed a bid, watch for a new competing bid and
+          submit one automatic bid at the chosen time. Set each name's allowance from its name page.
+        </p>
+        {autoBidSaved && <div className="success-banner">Saved.</div>}
+        <form
+          className="card settings-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAutoBidSaved(false);
+            saveAutoBidMutation.mutate();
+          }}
+        >
+          <div className="field">
+            <label htmlFor="auto-bid-timing">Submit at</label>
+            <select
+              id="auto-bid-timing"
+              value={autoBidTiming}
+              onChange={(e) => setAutoBidTiming(e.target.value as "next-block" | "before-reveal")}
+            >
+              <option value="next-block">The next block</option>
+              <option value="before-reveal">Two blocks before reveal</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="auto-bid-increment">Additional amount (HNS)</label>
+            <input
+              id="auto-bid-increment"
+              type="number"
+              min="0.000001"
+              step="0.000001"
+              required
+              value={autoBidIncrement}
+              onChange={(e) => setAutoBidIncrement(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="auto-bid-passphrase">Wallet passphrase</label>
+            <input
+              id="auto-bid-passphrase"
+              type="password"
+              autoComplete="new-password"
+              value={autoBidPassphrase}
+              placeholder={
+                autoBidQuery.data?.passphraseConfigured
+                  ? "Saved — enter a new value to replace it"
+                  : "Leave empty only if your wallet has no passphrase"
+              }
+              onChange={(e) => setAutoBidPassphrase(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="auto-bid-admin-password">Confirm with your app password</label>
+            <input
+              id="auto-bid-admin-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={autoBidAdminPassword}
+              onChange={(e) => setAutoBidAdminPassword(e.target.value)}
+            />
+          </div>
+          <button type="submit" className="button" disabled={saveAutoBidMutation.isPending}>
+            {saveAutoBidMutation.isPending ? "Saving…" : "Save"}
           </button>
         </form>
       </section>

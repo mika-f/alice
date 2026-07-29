@@ -5,7 +5,13 @@ import { runMigrations } from "../db/migrate.js";
 import { watchedBroadcasts } from "../db/schema.js";
 import { listWatchedBroadcasts, watchBroadcast } from "./broadcast-watch-service.js";
 import { setExternalNotificationSettings } from "./external-notification-service.js";
-import { listNotifications, setAutoRevealSettings } from "./notification-service.js";
+import {
+  getAutoBidSettings,
+  listNotifications,
+  setAutoBidNameSettings,
+  setAutoBidSettings,
+  setAutoRevealSettings,
+} from "./notification-service.js";
 import { RescanTracker } from "./rescan-tracker.js";
 import { StatusPoller } from "./status-poller.js";
 
@@ -54,6 +60,7 @@ function fakeManager(
     unlock: vi.fn(async () => undefined),
     lock: vi.fn(async () => undefined),
     revealName: vi.fn(async () => ({ txid: "c".repeat(64), fee: 1n })),
+    bidName: vi.fn(async () => ({ txid: "d".repeat(64), fee: 1n })),
   };
   const manager = { get: () => adapter } as never;
   return { manager, adapter };
@@ -349,6 +356,73 @@ describe("StatusPoller", () => {
       expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
         false,
       );
+    });
+
+    it("bids the public competing lockup plus the configured increment on the next block", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      let height = 100;
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            blockHeight: height,
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      expect(adapter.bidName).not.toHaveBeenCalled();
+
+      height = 101;
+      await poller.refresh();
+      expect(adapter.bidName).toHaveBeenCalledWith({
+        name: "example",
+        bid: 3000000n,
+        lockup: 3000000n,
+      });
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).names.example?.spent).toBe("3000000");
+      expect(listNotifications(db).some((n) => n.type === "auto-bid-placed")).toBe(true);
+    });
+
+    it("never broadcasts an automatic bid above the configured budget", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "before-reveal",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "2500000" });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 2 })],
+        undefined,
+        async () =>
+          nameDetails({
+            blockHeight: 100,
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      await poller.refresh();
+      expect(adapter.bidName).not.toHaveBeenCalled();
+      expect(listNotifications(db).some((n) => n.type === "auto-bid-budget-reached")).toBe(true);
     });
   });
 

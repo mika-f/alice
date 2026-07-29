@@ -12,6 +12,8 @@ export const NOTIFICATION_TYPES = [
   "tx-failed",
   "wallet-sync-delayed",
   "reveal-deadline-approaching",
+  "auto-bid-placed",
+  "auto-bid-budget-reached",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

@@ -1,6 +1,7 @@
 import {
   externalNotificationSettingsRequestSchema,
   autoRevealSettingsRequestSchema,
+  autoBidSettingsRequestSchema,
   renewalThresholdsRequestSchema,
   revealThresholdsRequestSchema,
 } from "@alice-hns-wallet/schemas";
@@ -19,13 +20,16 @@ import {
 import {
   getRenewalThresholds,
   getAutoRevealSettings,
+  getAutoBidSettings,
   getRevealThresholds,
   listNotifications,
   markNotificationRead,
   setRenewalThresholds,
   setAutoRevealSettings,
+  setAutoBidSettings,
   setRevealThresholds,
   toAutoRevealSettingsStatus,
+  toAutoBidSettingsStatus,
 } from "../services/notification-service.js";
 import type { AppEnv } from "../types.js";
 
@@ -74,10 +78,29 @@ export function createNotificationRoutes(db: Db, env: Env) {
     auditLog(db, env, "settings.auto_reveal"),
     requireReauth(),
     async (c) => {
-      const parsed = autoRevealSettingsRequestSchema.safeParse(await c.req.json().catch(() => null));
+      const parsed = autoRevealSettingsRequestSchema.safeParse(
+        await c.req.json().catch(() => null),
+      );
       if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
       const settings = setAutoRevealSettings(db, env.ENCRYPTION_KEY, parsed.data);
       return c.json(toAutoRevealSettingsStatus(settings));
+    },
+  );
+
+  app.get("/settings/auto-bid", requireAuth(), (c) => {
+    return c.json(toAutoBidSettingsStatus(getAutoBidSettings(db, env.ENCRYPTION_KEY)));
+  });
+
+  app.put(
+    "/settings/auto-bid",
+    auditLog(db, env, "settings.auto_bid"),
+    requireReauth(),
+    async (c) => {
+      const parsed = autoBidSettingsRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+      return c.json(
+        toAutoBidSettingsStatus(setAutoBidSettings(db, env.ENCRYPTION_KEY, parsed.data)),
+      );
     },
   );
 

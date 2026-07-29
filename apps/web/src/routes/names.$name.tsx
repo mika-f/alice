@@ -1,11 +1,17 @@
 import { estimateDaysRemaining } from "@alice-hns-wallet/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { getName, setNameMeta } from "../api/names.js";
+import { useEffect, useState } from "react";
+import { reauth } from "../api/auth.js";
+import {
+  getName,
+  getNameAutoBidSettings,
+  setNameAutoBidSettings,
+  setNameMeta,
+} from "../api/names.js";
 import { useSession } from "../hooks/useSession.js";
 import { describeRecord } from "../lib/dns-records.js";
-import { formatHns } from "../lib/hns.js";
+import { formatHns, parseHnsToSmallestUnit } from "../lib/hns.js";
 import { shakeshiftBlockUrl, shakeshiftNameUrl } from "../lib/shakeshift.js";
 import { rootRoute } from "./root.js";
 
@@ -50,6 +56,32 @@ function NameDetailPage() {
 
   const detail = detailQuery.data;
   const hasOwnBid = detail?.bids.some((b) => b.own) ?? false;
+  const autoBidQuery = useQuery({
+    queryKey: ["name-auto-bid", name],
+    queryFn: () => getNameAutoBidSettings(name),
+    enabled: session.data?.authenticated === true && hasOwnBid,
+  });
+  const [autoBidEnabled, setAutoBidEnabled] = useState(false);
+  const [autoBidBudget, setAutoBidBudget] = useState("1");
+  const [autoBidPassword, setAutoBidPassword] = useState("");
+  useEffect(() => {
+    if (!autoBidQuery.data) return;
+    setAutoBidEnabled(autoBidQuery.data.enabled);
+    setAutoBidBudget(formatHns(autoBidQuery.data.budget));
+  }, [autoBidQuery.data]);
+  const autoBidMutation = useMutation({
+    mutationFn: async () => {
+      await reauth({ method: "password", password: autoBidPassword });
+      return setNameAutoBidSettings(name, {
+        enabled: autoBidEnabled,
+        budget: parseHnsToSmallestUnit(autoBidBudget),
+      });
+    },
+    onSuccess: () => {
+      setAutoBidPassword("");
+      queryClient.invalidateQueries({ queryKey: ["name-auto-bid", name] });
+    },
+  });
   const hasOwnReveal = detail?.reveals.some((r) => r.own) ?? false;
   const canBid = detail && (detail.state === "opening" || detail.state === "bidding");
   const canReveal = detail && detail.state === "revealing" && hasOwnBid && !hasOwnReveal;
@@ -133,11 +165,15 @@ function NameDetailPage() {
               </div>
               <div>
                 <dt>Owner address</dt>
-                <dd><code>{detail.ownerAddress ?? "—"}</code></dd>
+                <dd>
+                  <code>{detail.ownerAddress ?? "—"}</code>
+                </dd>
               </div>
               <div className="name-detail-wide">
                 <dt>Name hash</dt>
-                <dd><code>{detail.nameHash}</code></dd>
+                <dd>
+                  <code>{detail.nameHash}</code>
+                </dd>
               </div>
             </dl>
             <div className="name-notes">
@@ -216,13 +252,80 @@ function NameDetailPage() {
             </section>
           )}
 
+          {hasOwnBid && detail.state === "bidding" && (
+            <section className="card" aria-labelledby="auto-bid-heading">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">Auction protection</span>
+                  <h2 id="auto-bid-heading">Automatic competitive bidding</h2>
+                </div>
+              </div>
+              <p className="muted">
+                This budget is only for {name}. Automatic bids use the shared timing and increment
+                settings, while their total is deducted from this name's allowance.
+              </p>
+              <form
+                className="settings-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  autoBidMutation.mutate();
+                }}
+              >
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={autoBidEnabled}
+                    onChange={(e) => setAutoBidEnabled(e.target.checked)}
+                  />
+                  Automatically respond to competing bids for {name}
+                </label>
+                <div className="field">
+                  <label htmlFor="name-auto-bid-budget">Total budget (HNS)</label>
+                  <input
+                    id="name-auto-bid-budget"
+                    type="number"
+                    min="0.000001"
+                    step="0.000001"
+                    required
+                    value={autoBidBudget}
+                    onChange={(e) => setAutoBidBudget(e.target.value)}
+                  />
+                </div>
+                {autoBidQuery.data && (
+                  <p className="muted">
+                    Used: {formatHns(autoBidQuery.data.spent)} HNS · Remaining:{" "}
+                    {formatHns(autoBidQuery.data.remaining)} HNS
+                  </p>
+                )}
+                <div className="field">
+                  <label htmlFor="name-auto-bid-password">Confirm with your app password</label>
+                  <input
+                    id="name-auto-bid-password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={autoBidPassword}
+                    onChange={(e) => setAutoBidPassword(e.target.value)}
+                  />
+                </div>
+                <button type="submit" className="button" disabled={autoBidMutation.isPending}>
+                  {autoBidMutation.isPending ? "Saving…" : "Save"}
+                </button>
+              </form>
+            </section>
+          )}
+
           <section className="card" aria-labelledby="dns-resource-heading">
             <div className="section-heading">
               <div>
                 <span className="eyebrow">On-chain records</span>
                 <h2 id="dns-resource-heading">DNS resource</h2>
               </div>
-              {detail.resource && <span className="status-badge status-badge-muted">{detail.resource.size} bytes</span>}
+              {detail.resource && (
+                <span className="status-badge status-badge-muted">
+                  {detail.resource.size} bytes
+                </span>
+              )}
             </div>
             {detail.resource ? (
               <>

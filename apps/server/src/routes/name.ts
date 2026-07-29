@@ -11,6 +11,7 @@ import type {
 import { validateBid, validateResource } from "@alice-hns-wallet/domain";
 import {
   bidNameRequestSchema,
+  nameAutoBidSettingsRequestSchema,
   nameMetaRequestSchema,
   renewNamesBatchRequestSchema,
   revokeNameRequestSchema,
@@ -54,6 +55,11 @@ import {
 } from "../services/name-service.js";
 import { verifyAndConsumeRecoveryCode, verifyTotpCode } from "../services/totp-service.js";
 import { getWalletStatus } from "../services/wallet-service.js";
+import {
+  getAutoBidNameSettings,
+  setAutoBidNameSettings,
+  toAutoBidNameSettingsStatus,
+} from "../services/notification-service.js";
 import type { AppEnv } from "../types.js";
 
 function serializeOwnedName(item: OwnedName) {
@@ -148,6 +154,31 @@ export function createNameRoutes(
     const detail = await getNameDetail(db, hsdManager.get(), c.req.param("name"));
     return c.json(serializeNameDetails(detail));
   });
+
+  app.get("/names/:name/auto-bid", requireAuth(), (c) => {
+    return c.json(
+      toAutoBidNameSettingsStatus(
+        getAutoBidNameSettings(db, env.ENCRYPTION_KEY, c.req.param("name")),
+      ),
+    );
+  });
+
+  app.put(
+    "/names/:name/auto-bid",
+    auditLog(db, env, "name.auto_bid_settings"),
+    requireReauth(),
+    async (c) => {
+      const parsed = nameAutoBidSettingsRequestSchema.safeParse(
+        await c.req.json().catch(() => null),
+      );
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+      return c.json(
+        toAutoBidNameSettingsStatus(
+          setAutoBidNameSettings(db, env.ENCRYPTION_KEY, c.req.param("name"), parsed.data),
+        ),
+      );
+    },
+  );
 
   app.get("/names/:name/resource", requireAuth(), async (c) => {
     const resource = await getNameResource(hsdManager.get(), c.req.param("name"));
