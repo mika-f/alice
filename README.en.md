@@ -50,7 +50,6 @@ See [docs/01-SPECIFICATION.md](docs/01-SPECIFICATION.md) for the full specificat
 ![](https://images.natsuneko.com/045b8071dfb7d482a39429dbb3141868431e147d0aa295e644c5c9eec2faad5c.png)
 ![](https://images.natsuneko.com/9027f9506f0ccb1a7172e7e7dc41058ce446985996915a547c6e1f8a43ec7c92.png)
 
-
 ### Name Management
 
 - List of owned Names (filter, sort, search — all handled client-side)
@@ -60,7 +59,6 @@ See [docs/01-SPECIFICATION.md](docs/01-SPECIFICATION.md) for the full specificat
 - Revoke (a "danger zone" action requiring password + TOTP/recovery code re-entry)
 
 ![](https://images.natsuneko.com/2aeb00576a6ace0ce00061a33d7303962988a84b93a9e368a5a60258e6646539.png)
-
 
 ### Name Auctions
 
