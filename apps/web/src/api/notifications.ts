@@ -45,3 +45,19 @@ export function setRevealThresholds(input: RevealThresholdsResponse): Promise<vo
     body: JSON.stringify(input),
   });
 }
+
+export interface AutoRevealSettingsResponse {
+  enabled: boolean;
+  passphraseConfigured: boolean;
+}
+
+export function getAutoRevealSettings(): Promise<AutoRevealSettingsResponse> {
+  return apiFetch("/api/settings/auto-reveal");
+}
+
+export function setAutoRevealSettings(input: {
+  enabled: boolean;
+  passphrase: string;
+}): Promise<AutoRevealSettingsResponse> {
+  return apiFetch("/api/settings/auto-reveal", { method: "PUT", body: JSON.stringify(input) });
+}

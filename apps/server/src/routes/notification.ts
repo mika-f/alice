@@ -1,5 +1,6 @@
 import {
   externalNotificationSettingsRequestSchema,
+  autoRevealSettingsRequestSchema,
   renewalThresholdsRequestSchema,
   revealThresholdsRequestSchema,
 } from "@alice-hns-wallet/schemas";
@@ -8,6 +9,7 @@ import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
 import { auditLog } from "../middleware/audit.js";
 import { requireAuth } from "../middleware/session.js";
+import { requireReauth } from "../middleware/reauth.js";
 import {
   getExternalNotificationSettings,
   sendTestNotification,
@@ -16,11 +18,14 @@ import {
 } from "../services/external-notification-service.js";
 import {
   getRenewalThresholds,
+  getAutoRevealSettings,
   getRevealThresholds,
   listNotifications,
   markNotificationRead,
   setRenewalThresholds,
+  setAutoRevealSettings,
   setRevealThresholds,
+  toAutoRevealSettingsStatus,
 } from "../services/notification-service.js";
 import type { AppEnv } from "../types.js";
 
@@ -59,6 +64,22 @@ export function createNotificationRoutes(db: Db, env: Env) {
     setRevealThresholds(db, parsed.data);
     return c.body(null, 204);
   });
+
+  app.get("/settings/auto-reveal", requireAuth(), (c) => {
+    return c.json(toAutoRevealSettingsStatus(getAutoRevealSettings(db, env.ENCRYPTION_KEY)));
+  });
+
+  app.put(
+    "/settings/auto-reveal",
+    auditLog(db, env, "settings.auto_reveal"),
+    requireReauth(),
+    async (c) => {
+      const parsed = autoRevealSettingsRequestSchema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+      const settings = setAutoRevealSettings(db, env.ENCRYPTION_KEY, parsed.data);
+      return c.json(toAutoRevealSettingsStatus(settings));
+    },
+  );
 
   app.get("/settings/external-notifications", requireAuth(), (c) => {
     const config = getExternalNotificationSettings(db, env.ENCRYPTION_KEY);

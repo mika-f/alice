@@ -12,12 +12,14 @@ import {
 import type { HsdV8Adapter } from "@alice-hns-wallet/hsd-client";
 import { isSupportedHsdVersion } from "@alice-hns-wallet/hsd-client";
 import type { Db } from "../db/client.js";
-import { listWatchedBroadcasts, unwatchBroadcast } from "./broadcast-watch-service.js";
+import { listWatchedBroadcasts, unwatchBroadcast, watchBroadcast } from "./broadcast-watch-service.js";
 import {
   createNotification,
+  getAutoRevealSettings,
   getRenewalThresholds,
   getRevealThresholds,
 } from "./notification-service.js";
+import { recordAudit } from "./audit-service.js";
 import type { HsdConnectionManager } from "./hsd-connection-manager.js";
 import type { RescanTracker } from "./rescan-tracker.js";
 
@@ -62,6 +64,7 @@ export class StatusPoller {
   private readonly lastRenewalCategory = new Map<string, string>();
   private readonly lastTransferState = new Map<string, TransferState>();
   private readonly lastRevealCategory = new Map<string, RevealCategory>();
+  private readonly autoRevealingNames = new Set<string>();
 
   constructor(
     private readonly hsdManager: HsdConnectionManager,
@@ -170,6 +173,7 @@ export class StatusPoller {
     const names = await hsd.getNames();
     const thresholds = getRenewalThresholds(this.db!);
     const revealThresholds = getRevealThresholds(this.db!);
+    const autoRevealSettings = getAutoRevealSettings(this.db!, this.encryptionKey ?? "");
 
     for (const item of names) {
       const category = classifyRenewal(item, thresholds);
@@ -208,7 +212,7 @@ export class StatusPoller {
       }
       this.lastTransferState.set(item.name, item.transferState);
 
-      await this.checkRevealNotification(hsd, item, revealThresholds);
+      await this.checkRevealNotification(hsd, item, revealThresholds, autoRevealSettings);
     }
   }
 
@@ -222,12 +226,26 @@ export class StatusPoller {
     hsd: HsdV8Adapter,
     item: OwnedName,
     thresholds: RevealThresholds,
+    autoRevealSettings: { enabled: boolean; passphrase: string | null },
   ): Promise<void> {
     const category = classifyReveal(item, thresholds);
+    if (category === "none") return;
+
+    // Automatic reveals deliberately run on every poll until successful. Unlike a notification,
+    // an unsuccessful broadcast must not be suppressed just because the name remains in REVEAL.
+    if (autoRevealSettings.enabled) {
+      const detail = await hsd.getName(item.name);
+      const hasUnrevealedOwnBid =
+        detail.bids.some((bid) => bid.own) && !detail.reveals.some((reveal) => reveal.own);
+      if (hasUnrevealedOwnBid) {
+        await this.autoReveal(hsd, item.name, autoRevealSettings.passphrase);
+      }
+      return;
+    }
+
     const previous = this.lastRevealCategory.get(item.name);
     if (category === previous) return;
     this.lastRevealCategory.set(item.name, category);
-    if (category === "none") return;
 
     const detail = await hsd.getName(item.name);
     const hasUnrevealedOwnBid =
@@ -242,6 +260,38 @@ export class StatusPoller {
           ? `${item.name}'s reveal deadline is imminent — reveal now or forfeit your bid`
           : `${item.name} has entered its reveal window — reveal your bid before it closes`,
     });
+  }
+
+  /** Unlocks only for the broadcast and locks again through `revealName`; failures retry next poll. */
+  private async autoReveal(hsd: HsdV8Adapter, name: string, passphrase: string | null): Promise<void> {
+    if (this.autoRevealingNames.has(name)) return;
+    this.autoRevealingNames.add(name);
+    let unlockedByAutoReveal = false;
+    try {
+      const status = await hsd.getWalletStatus();
+      if (status.locked) {
+        if (passphrase === null) throw new Error("Wallet is locked and no passphrase is configured");
+        await hsd.unlock(passphrase, 60);
+        unlockedByAutoReveal = true;
+      }
+      const result = await hsd.revealName(name);
+      watchBroadcast(this.db!, result.txid, name);
+      recordAudit(this.db!, { action: "name.auto_reveal", target: name, outcome: "success" });
+    } catch {
+      recordAudit(this.db!, {
+        action: "name.auto_reveal",
+        target: name,
+        outcome: "failure",
+        detail: "Automatic reveal failed",
+      });
+    } finally {
+      if (unlockedByAutoReveal) {
+        await hsd.lock().catch(() => {
+          // The original broadcast outcome is already recorded; never leave the poller unhandled.
+        });
+      }
+      this.autoRevealingNames.delete(name);
+    }
   }
 
   /**

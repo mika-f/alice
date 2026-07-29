@@ -5,7 +5,7 @@ import { runMigrations } from "../db/migrate.js";
 import { watchedBroadcasts } from "../db/schema.js";
 import { listWatchedBroadcasts, watchBroadcast } from "./broadcast-watch-service.js";
 import { setExternalNotificationSettings } from "./external-notification-service.js";
-import { listNotifications } from "./notification-service.js";
+import { listNotifications, setAutoRevealSettings } from "./notification-service.js";
 import { RescanTracker } from "./rescan-tracker.js";
 import { StatusPoller } from "./status-poller.js";
 
@@ -51,6 +51,9 @@ function fakeManager(
     getNames: vi.fn(async () => names),
     getTransaction: vi.fn(getTransaction),
     getName: vi.fn(getName),
+    unlock: vi.fn(async () => undefined),
+    lock: vi.fn(async () => undefined),
+    revealName: vi.fn(async () => ({ txid: "c".repeat(64), fee: 1n })),
   };
   const manager = { get: () => adapter } as never;
   return { manager, adapter };
@@ -324,6 +327,25 @@ describe("StatusPoller", () => {
       const poller = new StatusPoller(manager, db);
       await poller.refresh();
 
+      expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
+        false,
+      );
+    });
+
+    it("automatically reveals an unrevealed own bid when enabled", async () => {
+      db = freshDb();
+      setAutoRevealSettings(db, ENCRYPTION_KEY, { enabled: true, passphrase: "wallet-secret" });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing", blocksRemaining: 10 })],
+        undefined,
+        async () => nameDetails({ bids: [{ value: 100n, lockup: 100n, height: 1, own: true }] }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+
+      expect(adapter.revealName).toHaveBeenCalledWith("example");
       expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
         false,
       );

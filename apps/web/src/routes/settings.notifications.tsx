@@ -3,10 +3,13 @@ import { createRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   getRenewalThresholds,
+  getAutoRevealSettings,
   getRevealThresholds,
+  setAutoRevealSettings,
   setRenewalThresholds,
   setRevealThresholds,
 } from "../api/notifications.js";
+import { reauth } from "../api/auth.js";
 import { useSession } from "../hooks/useSession.js";
 import { rootRoute } from "./root.js";
 
@@ -33,6 +36,12 @@ function NotificationSettingsPage() {
     enabled: session.data?.authenticated === true,
   });
 
+  const autoRevealQuery = useQuery({
+    queryKey: ["auto-reveal-settings"],
+    queryFn: getAutoRevealSettings,
+    enabled: session.data?.authenticated === true,
+  });
+
   const [blocksRemaining, setBlocksRemaining] = useState("");
   const [daysRemaining, setDaysRemaining] = useState("");
   const [expirationRatio, setExpirationRatio] = useState("");
@@ -40,6 +49,10 @@ function NotificationSettingsPage() {
 
   const [revealBlocksRemaining, setRevealBlocksRemaining] = useState("");
   const [revealSaved, setRevealSaved] = useState(false);
+  const [autoRevealEnabled, setAutoRevealEnabled] = useState(false);
+  const [autoRevealPassphrase, setAutoRevealPassphrase] = useState("");
+  const [autoRevealAdminPassword, setAutoRevealAdminPassword] = useState("");
+  const [autoRevealSaved, setAutoRevealSaved] = useState(false);
 
   useEffect(() => {
     if (session.data && !session.data.authenticated) {
@@ -61,6 +74,10 @@ function NotificationSettingsPage() {
     }
   }, [revealThresholdsQuery.data]);
 
+  useEffect(() => {
+    if (autoRevealQuery.data) setAutoRevealEnabled(autoRevealQuery.data.enabled);
+  }, [autoRevealQuery.data]);
+
   const saveMutation = useMutation({
     mutationFn: () =>
       setRenewalThresholds({
@@ -79,6 +96,19 @@ function NotificationSettingsPage() {
     onSuccess: () => {
       setRevealSaved(true);
       queryClient.invalidateQueries({ queryKey: ["reveal-thresholds"] });
+    },
+  });
+
+  const saveAutoRevealMutation = useMutation({
+    mutationFn: async () => {
+      await reauth({ method: "password", password: autoRevealAdminPassword });
+      return setAutoRevealSettings({ enabled: autoRevealEnabled, passphrase: autoRevealPassphrase });
+    },
+    onSuccess: () => {
+      setAutoRevealPassphrase("");
+      setAutoRevealAdminPassword("");
+      setAutoRevealSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["auto-reveal-settings"] });
     },
   });
 
@@ -180,6 +210,74 @@ function NotificationSettingsPage() {
           </div>
           <button type="submit" className="button" disabled={saveRevealMutation.isPending}>
             {saveRevealMutation.isPending ? "Saving…" : "Save"}
+          </button>
+        </form>
+      </section>
+
+      <section className="settings-section" aria-labelledby="auto-reveal-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Auction protection</span>
+            <h2 id="auto-reveal-heading">Automatic reveal</h2>
+          </div>
+        </div>
+        <p className="muted">
+          Automatically reveal every bid from this wallet as soon as its reveal period begins. Your
+          wallet passphrase is encrypted at rest and used only to unlock the wallet for this action.
+        </p>
+
+        {autoRevealSaved && <div className="success-banner">Saved.</div>}
+
+        <form
+          className="card settings-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAutoRevealSaved(false);
+            saveAutoRevealMutation.mutate();
+          }}
+        >
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={autoRevealEnabled}
+              onChange={(e) => {
+                setAutoRevealEnabled(e.target.checked);
+                setAutoRevealSaved(false);
+              }}
+            />
+            Automatically reveal bids
+          </label>
+          <div className="field">
+            <label htmlFor="auto-reveal-passphrase">Wallet passphrase</label>
+            <input
+              id="auto-reveal-passphrase"
+              type="password"
+              autoComplete="new-password"
+              value={autoRevealPassphrase}
+              placeholder={
+                autoRevealQuery.data?.passphraseConfigured
+                  ? "Saved — enter a new value to replace it"
+                  : "Leave empty only if your wallet has no passphrase"
+              }
+              onChange={(e) => setAutoRevealPassphrase(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="auto-reveal-admin-password">Confirm with your app password</label>
+            <input
+              id="auto-reveal-admin-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={autoRevealAdminPassword}
+              onChange={(e) => setAutoRevealAdminPassword(e.target.value)}
+            />
+          </div>
+          <p className="muted">
+            Disabling this feature removes any passphrase saved for automatic reveal.
+          </p>
+          <button type="submit" className="button" disabled={saveAutoRevealMutation.isPending}>
+            {saveAutoRevealMutation.isPending ? "Saving…" : "Save"}
           </button>
         </form>
       </section>

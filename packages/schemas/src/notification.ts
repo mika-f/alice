@@ -17,6 +17,17 @@ export const revealThresholdsRequestSchema = z.object({
 export type RevealThresholdsRequestBody = z.infer<typeof revealThresholdsRequestSchema>;
 
 /**
+ * The wallet passphrase is optional for wallets without encryption. When supplied, the server
+ * stores it encrypted and uses it only to unlock the wallet immediately before an auto-reveal.
+ */
+export const autoRevealSettingsRequestSchema = z.object({
+  enabled: z.boolean(),
+  passphrase: z.string().max(1024),
+});
+
+export type AutoRevealSettingsRequestBody = z.infer<typeof autoRevealSettingsRequestSchema>;
+
+/**
  * `url` may be submitted empty to mean "leave the existing configured value unchanged" (so
  * toggling `enabled` doesn't force retyping a webhook URL the server already has); required only
  * when the channel is being enabled for the first time. Enforced server-side, not by this schema.

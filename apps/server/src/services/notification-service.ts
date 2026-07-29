@@ -7,12 +7,25 @@ import {
   type RevealThresholds,
 } from "@alice-hns-wallet/domain";
 import { desc, eq } from "drizzle-orm";
+import { decrypt, encrypt } from "../crypto/encryption.js";
 import type { Db } from "../db/client.js";
 import { notifications, settings } from "../db/schema.js";
 import { dispatchExternalNotification } from "./external-notification-service.js";
 
 const RENEWAL_THRESHOLDS_KEY = "renewal_thresholds";
 const REVEAL_THRESHOLDS_KEY = "reveal_thresholds";
+const AUTO_REVEAL_SETTINGS_KEY = "auto_reveal_settings";
+
+export interface AutoRevealSettings {
+  enabled: boolean;
+  /** Only available to the background worker, never returned by the settings API. */
+  passphrase: string | null;
+}
+
+export interface AutoRevealSettingsStatus {
+  enabled: boolean;
+  passphraseConfigured: boolean;
+}
 
 export interface CreateNotificationInput {
   type: NotificationType;
@@ -114,4 +127,48 @@ export function setRevealThresholds(db: Db, thresholds: RevealThresholds): void 
   } else {
     db.insert(settings).values({ key: REVEAL_THRESHOLDS_KEY, value }).run();
   }
+}
+
+/** The passphrase is encrypted at rest and is intentionally omitted from the public settings response. */
+export function getAutoRevealSettings(db: Db, encryptionKey: string): AutoRevealSettings {
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_REVEAL_SETTINGS_KEY)).all();
+  if (!row) return { enabled: false, passphrase: null };
+
+  try {
+    const parsed = JSON.parse(decrypt(row.value, encryptionKey)) as Partial<AutoRevealSettings>;
+    return {
+      enabled: parsed.enabled === true,
+      passphrase: typeof parsed.passphrase === "string" ? parsed.passphrase : null,
+    };
+  } catch {
+    return { enabled: false, passphrase: null };
+  }
+}
+
+export function toAutoRevealSettingsStatus(
+  input: AutoRevealSettings,
+): AutoRevealSettingsStatus {
+  return { enabled: input.enabled, passphraseConfigured: input.passphrase !== null };
+}
+
+export function setAutoRevealSettings(
+  db: Db,
+  encryptionKey: string,
+  input: { enabled: boolean; passphrase: string },
+): AutoRevealSettings {
+  const existing = getAutoRevealSettings(db, encryptionKey);
+  // Disabling deletes the saved passphrase. An empty value while enabled keeps a previously saved
+  // passphrase, while still supporting wallets which do not have one.
+  const next: AutoRevealSettings = {
+    enabled: input.enabled,
+    passphrase: input.enabled ? (input.passphrase || existing.passphrase) : null,
+  };
+  const value = encrypt(JSON.stringify(next), encryptionKey);
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_REVEAL_SETTINGS_KEY)).all();
+  if (row) {
+    db.update(settings).set({ value }).where(eq(settings.key, AUTO_REVEAL_SETTINGS_KEY)).run();
+  } else {
+    db.insert(settings).values({ key: AUTO_REVEAL_SETTINGS_KEY, value }).run();
+  }
+  return next;
 }
