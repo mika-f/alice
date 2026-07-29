@@ -24,6 +24,7 @@ import { rootRoute } from "./routes/root.js";
 import { sendRoute } from "./routes/send.js";
 import { setupRoute } from "./routes/setup.js";
 import { transactionsRoute } from "./routes/transactions.js";
+import { auctionSettingsRoute } from "./routes/settings.auction.js";
 
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
@@ -50,6 +51,7 @@ const routeTree = rootRoute.addChildren([
   auditLogRoute,
   diagnosticsRoute,
   externalNotificationSettingsRoute,
+  auctionSettingsRoute,
 ]);
 
 export const router = createRouter({ routeTree });

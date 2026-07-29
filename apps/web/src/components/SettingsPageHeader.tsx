@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 const settingsTabs = [
   { to: "/settings/connection", label: "Connection" },
   { to: "/settings/import-wallet", label: "Restore wallet" },
+  { to: "/settings/auction", label: "Auction" },
   { to: "/settings/notifications", label: "Notifications" },
   { to: "/settings/external-notifications", label: "External alerts" },
   { to: "/settings/diagnostics", label: "Diagnostics" },
