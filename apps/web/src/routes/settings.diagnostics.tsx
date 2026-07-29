@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { getDiagnostics } from "../api/diagnostics.js";
 import { useSession } from "../hooks/useSession.js";
+import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
 
 export const diagnosticsRoute = createRoute({
@@ -36,10 +37,7 @@ function DiagnosticsPage() {
 
   return (
     <main className="dashboard">
-      <div className="dashboard-header">
-        <h1>Diagnostics</h1>
-        <Link to="/">Back to dashboard</Link>
-      </div>
+      <SettingsPageHeader title="Diagnostics" />
 
       <div className="field-row">
         <button

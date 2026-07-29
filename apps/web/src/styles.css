@@ -155,6 +155,42 @@ h3 {
   font-size: 13px;
   font-weight: 600;
 }
+.settings-page-header {
+  margin-bottom: 18px;
+}
+.settings-page-header .eyebrow {
+  margin-bottom: 5px;
+}
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 30px;
+  padding: 5px;
+  overflow-x: auto;
+  background: #eaf0ec;
+  border: 1px solid #dce6df;
+  border-radius: 12px;
+  scrollbar-width: thin;
+}
+.settings-tabs a {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border-radius: 8px;
+  color: #60736b;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.settings-tabs a:hover {
+  color: #16634f;
+  background: #f6faf7;
+}
+.settings-tabs a.active {
+  color: #16634f;
+  background: #fff;
+  box-shadow: 0 1px 3px #1a45301c;
+}
 .dashboard > h1 {
   margin: 35px 0 16px;
   font-size: 18px;

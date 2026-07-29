@@ -1,10 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { reauth } from "../api/auth.js";
 import { ApiError } from "../api/client.js";
 import { importMnemonic } from "../api/wallet.js";
 import { useSession } from "../hooks/useSession.js";
+import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
 
 export const importWalletRoute = createRoute({
@@ -63,27 +64,18 @@ function ImportWalletPage() {
   if (done) {
     return (
       <main className="dashboard">
-        <div className="dashboard-header">
-          <h1>Wallet imported</h1>
-          <Link to="/">Back to dashboard</Link>
-        </div>
+        <SettingsPageHeader title="Wallet imported" />
         <div className="success-banner">
           Wallet <code>{walletId}</code> was created from the mnemonic and a rescan was started. Go
           to Connection settings to make it the active wallet.
         </div>
-        <p>
-          <Link to="/settings/connection">Connection settings</Link>
-        </p>
       </main>
     );
   }
 
   return (
     <main className="dashboard">
-      <div className="dashboard-header">
-        <h1>Restore from mnemonic</h1>
-        <Link to="/">Back to dashboard</Link>
-      </div>
+      <SettingsPageHeader title="Restore from mnemonic" />
 
       <p className="muted">
         This creates a new wallet on the connected hs-wallet instance. It does not change which

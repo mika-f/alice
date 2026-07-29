@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   getExternalNotificationSettings,
@@ -7,6 +7,7 @@ import {
   setExternalNotificationSettings,
 } from "../api/external-notifications.js";
 import { useSession } from "../hooks/useSession.js";
+import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
 
 export const externalNotificationSettingsRoute = createRoute({
@@ -75,10 +76,7 @@ function ExternalNotificationSettingsPage() {
 
   return (
     <main className="dashboard">
-      <div className="dashboard-header">
-        <h1>External notifications</h1>
-        <Link to="/notifications">Back to notifications</Link>
-      </div>
+      <SettingsPageHeader title="External notifications" />
 
       <p className="muted">
         Sends the same short message shown in-app to the channels below. Never includes your seed,

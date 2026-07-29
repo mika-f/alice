@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   getRenewalThresholds,
@@ -14,6 +14,7 @@ import {
 import { formatHns, parseHnsToSmallestUnit } from "../lib/hns.js";
 import { reauth } from "../api/auth.js";
 import { useSession } from "../hooks/useSession.js";
+import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
 
 export const notificationSettingsRoute = createRoute({
@@ -151,10 +152,7 @@ function NotificationSettingsPage() {
 
   return (
     <main className="dashboard">
-      <div className="dashboard-header">
-        <h1>Renewal notification thresholds</h1>
-        <Link to="/notifications">Back to notifications</Link>
-      </div>
+      <SettingsPageHeader title="Renewal notification thresholds" />
 
       <p className="muted">
         A name is flagged as approaching renewal once it crosses any one of these thresholds.

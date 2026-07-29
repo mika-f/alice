@@ -1,12 +1,13 @@
 import type { Network } from "@alice-hns-wallet/domain";
 import type { ConnectionConfig, ConnectionTestResult } from "@alice-hns-wallet/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { reauth } from "../api/auth.js";
 import { ApiError } from "../api/client.js";
 import { getConnection, saveConnection, testConnection } from "../api/connection.js";
 import { useSession } from "../hooks/useSession.js";
+import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
 
 export const connectionSettingsRoute = createRoute({
@@ -93,14 +94,7 @@ function ConnectionSettingsPage() {
 
   return (
     <main className="dashboard">
-      <div className="dashboard-header">
-        <h1>Connection settings</h1>
-        <Link to="/">Back to dashboard</Link>
-      </div>
-
-      <p>
-        <Link to="/settings/import-wallet">Restore a wallet from mnemonic</Link>
-      </p>
+      <SettingsPageHeader title="Connection settings" />
 
       {saveError && <div className="error-banner">{saveError}</div>}
 
