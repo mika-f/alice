@@ -180,7 +180,10 @@ h3 {
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
 }
 .settings-tabs a:hover {
   color: #16634f;
