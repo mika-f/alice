@@ -23,6 +23,7 @@ function fakeManager(
     walletStatus: boolean;
     version: string;
     synced: boolean;
+    chainHeight: number;
   }> = {},
   names: OwnedName[] = [],
   getTransaction: (txid: string) => Promise<TransactionRecord | null> = async () => null,
@@ -37,7 +38,7 @@ function fakeManager(
         connected: true,
         version: overrides.version ?? "8.0.0",
         network: "regtest",
-        chainHeight: 100,
+        chainHeight: overrides.chainHeight ?? 100,
         peerCount: 3,
         synced: overrides.synced ?? true,
         progress: overrides.synced === false ? 0.5 : 1,
@@ -366,14 +367,17 @@ describe("StatusPoller", () => {
         passphrase: "wallet-secret",
       });
       setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
-      let height = 100;
+      // `NameDetails.blockHeight` is the name's own state-entry height (fixed here), distinct from
+      // the actual chain tip that drives "next block" scheduling — kept constant on purpose to
+      // prove the poller reacts to `overrides.chainHeight`, not `detail.blockHeight`.
+      const overrides = { chainHeight: 100 };
       const { manager, adapter } = fakeManager(
-        {},
+        overrides,
         [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
         undefined,
         async () =>
           nameDetails({
-            blockHeight: height,
+            blockHeight: 50,
             bids: [
               { value: 1000000n, lockup: 1000000n, height: 99, own: true },
               { value: null, lockup: 2000000n, height: 100, own: false },
@@ -385,7 +389,7 @@ describe("StatusPoller", () => {
       await poller.refresh();
       expect(adapter.bidName).not.toHaveBeenCalled();
 
-      height = 101;
+      overrides.chainHeight = 101;
       await poller.refresh();
       expect(adapter.bidName).toHaveBeenCalledWith({
         name: "example",
@@ -423,6 +427,76 @@ describe("StatusPoller", () => {
       await poller.refresh();
       expect(adapter.bidName).not.toHaveBeenCalled();
       expect(listNotifications(db).some((n) => n.type === "auto-bid-budget-reached")).toBe(true);
+    });
+
+    it("notifies auto-bid-failed when the automatic bid broadcast throws", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      const overrides = { chainHeight: 100 };
+      const { manager, adapter } = fakeManager(
+        overrides,
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            blockHeight: 50,
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      adapter.bidName = vi.fn(async () => {
+        throw new Error("insufficient funds");
+      });
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      overrides.chainHeight = 101;
+      await poller.refresh();
+
+      expect(adapter.bidName).toHaveBeenCalled();
+      const notifications = listNotifications(db);
+      expect(
+        notifications.some(
+          (n) => n.type === "auto-bid-failed" && n.message.includes("insufficient funds"),
+        ),
+      ).toBe(true);
+    });
+
+    it("does not schedule or execute an automatic bid when the current chain height is unknown", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      const { manager, adapter } = fakeManager(
+        { status: false },
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            blockHeight: 100,
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      await poller.refresh();
+
+      expect(adapter.bidName).not.toHaveBeenCalled();
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).scheduled.example).toBeUndefined();
     });
   });
 
