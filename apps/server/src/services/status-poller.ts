@@ -131,7 +131,7 @@ export class StatusPoller {
 
     if (this.db) {
       this.checkConnectionNotifications(node, nodeError, walletError);
-      await this.checkNameNotifications().catch(() => {
+      await this.checkNameNotifications(node?.chainHeight ?? null).catch(() => {
         // Best-effort: a broken name check must never take down the status poll itself.
       });
       await this.checkWatchedBroadcasts().catch(() => {
@@ -178,7 +178,7 @@ export class StatusPoller {
     );
   }
 
-  private async checkNameNotifications(): Promise<void> {
+  private async checkNameNotifications(currentHeight: number | null): Promise<void> {
     const hsd = this.hsdManager.get();
     const names = await hsd.getNames();
     const thresholds = getRenewalThresholds(this.db!);
@@ -223,7 +223,7 @@ export class StatusPoller {
       this.lastTransferState.set(item.name, item.transferState);
 
       await this.checkRevealNotification(hsd, item, revealThresholds, autoRevealSettings);
-      await this.checkAutoBid(hsd, item);
+      await this.checkAutoBid(hsd, item, currentHeight);
     }
   }
 
@@ -231,8 +231,15 @@ export class StatusPoller {
    * Bid values are blinded until reveal. The public lockup is therefore the only chain-visible
    * competitor amount we can safely react to; using it makes the automatic bid conservative.
    */
-  private async checkAutoBid(hsd: HsdV8Adapter, item: OwnedName): Promise<void> {
+  private async checkAutoBid(
+    hsd: HsdV8Adapter,
+    item: OwnedName,
+    currentHeight: number | null,
+  ): Promise<void> {
     if (item.state !== "bidding" || !this.encryptionKey) return;
+    // Without a confirmed current chain height there's nothing reliable to schedule or compare
+    // against — `NameDetails.blockHeight` is the name's own state-entry height, not the chain tip.
+    if (currentHeight === null) return;
     const settings = getAutoBidSettings(this.db!, this.encryptionKey);
     const nameSettings = settings.names[item.name];
     if (!nameSettings?.enabled) return;
@@ -253,12 +260,12 @@ export class StatusPoller {
     if (!existing || existing.fingerprint !== fingerprint) {
       const targetHeight =
         settings.timing === "next-block"
-          ? detail.blockHeight + 1
-          : detail.blockHeight + Math.max(item.blocksRemaining - 2, 0);
+          ? currentHeight + 1
+          : currentHeight + Math.max(item.blocksRemaining - 2, 0);
       scheduleAutoBid(this.db!, this.encryptionKey, item.name, fingerprint, targetHeight);
       return;
     }
-    if (detail.blockHeight < existing.targetHeight) return;
+    if (currentHeight < existing.targetHeight) return;
     if (this.autoBiddingNames.has(item.name) || this.autoBidExecutionActive) return;
 
     const highestCompetitorLockup = competitors.reduce(
@@ -303,7 +310,12 @@ export class StatusPoller {
         message: `${item.name}: automatic bid broadcast`,
       });
       recordAudit(this.db!, { action: "name.auto_bid", target: item.name, outcome: "success" });
-    } catch {
+    } catch (error) {
+      this.notify({
+        type: "auto-bid-failed",
+        name: item.name,
+        message: `${item.name}: automatic bid failed to broadcast — ${errorMessage(error)}`,
+      });
       recordAudit(this.db!, {
         action: "name.auto_bid",
         target: item.name,

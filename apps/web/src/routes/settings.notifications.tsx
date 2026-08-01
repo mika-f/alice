@@ -1,10 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  getRenewalThresholds,
-  setRenewalThresholds,
-} from "../api/notifications.js";
+import { getRenewalThresholds, setRenewalThresholds } from "../api/notifications.js";
 import { useSession } from "../hooks/useSession.js";
 import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 import { rootRoute } from "./root.js";
@@ -26,12 +23,10 @@ function NotificationSettingsPage() {
     enabled: session.data?.authenticated === true,
   });
 
-
   const [blocksRemaining, setBlocksRemaining] = useState("");
   const [daysRemaining, setDaysRemaining] = useState("");
   const [expirationRatio, setExpirationRatio] = useState("");
   const [saved, setSaved] = useState(false);
-
 
   useEffect(() => {
     if (session.data && !session.data.authenticated) {
@@ -46,7 +41,6 @@ function NotificationSettingsPage() {
       setExpirationRatio(String(thresholdsQuery.data.expirationRatio));
     }
   }, [thresholdsQuery.data]);
-
 
   const saveMutation = useMutation({
     mutationFn: () =>
