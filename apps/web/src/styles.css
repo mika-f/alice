@@ -662,12 +662,25 @@ p {
   min-width: 0;
 }
 .name-list-title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+  min-width: 0;
 }
 .name-list-title a {
+  display: block;
+  overflow: hidden;
   font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.name-list-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.name-list-selection {
+  display: grid;
+  width: 22px;
+  place-items: center;
 }
 .name-list-main .muted {
   overflow: hidden;
@@ -1201,6 +1214,14 @@ p {
   }
   .names-toolbar {
     grid-template-columns: 1fr;
+  }
+  .name-list > li {
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+  }
+  .name-list-badges {
+    grid-column: 2;
+    justify-content: flex-start;
   }
   .address-list > li {
     align-items: flex-start !important;

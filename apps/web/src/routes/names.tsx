@@ -330,20 +330,21 @@ function NamesPage() {
       <ul className="name-list">
         {visible.map((item) => (
           <li key={item.name}>
-            {isRenewable(item) && (
-              <input
-                type="checkbox"
-                checked={selected.has(item.name)}
-                onChange={() => toggleSelected(item.name)}
-                aria-label={`Select ${item.name} for batch renewal`}
-              />
-            )}
+            <span className="name-list-selection">
+              {isRenewable(item) && (
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.name)}
+                  onChange={() => toggleSelected(item.name)}
+                  aria-label={`Select ${item.name} for batch renewal`}
+                />
+              )}
+            </span>
             <div className="name-list-main">
               <div className="name-list-title">
                 <Link to="/names/$name" params={{ name: item.name }}>
                   <strong>{item.name}</strong>
                 </Link>
-                <span className="status-badge status-badge-muted">{item.state}</span>
               </div>
               <span className="muted">
                 Renewal @{item.renewalHeight || "—"} · Expiration @{item.expirationHeight || "—"} ·{" "}
@@ -355,7 +356,10 @@ function NamesPage() {
                 </span>
               )}
             </div>
-            {item.owned && <span className="status-badge status-badge-success">Owned</span>}
+            <div className="name-list-badges">
+              <span className="status-badge status-badge-muted">{item.state}</span>
+              {item.owned && <span className="status-badge status-badge-success">Owned</span>}
+            </div>
           </li>
         ))}
       </ul>
