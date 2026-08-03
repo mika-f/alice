@@ -102,8 +102,9 @@ function NameRedeemPage() {
       </div>
 
       <p className="muted">
-        Recovers the locked-up amount from a losing, already-revealed bid. If this bid actually won
-        the auction, hsd will reject the redeem — this app doesn't determine the winner itself.
+        Recovers the locked-up amount from every losing, already-revealed bid you placed on this
+        name. This remains available after the winning name is registered or transferred. hsd
+        excludes the winning reveal and will reject the transaction if there is nothing to redeem.
       </p>
 
       {error && <div className="error-banner">{error}</div>}

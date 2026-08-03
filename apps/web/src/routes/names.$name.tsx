@@ -1,4 +1,4 @@
-import { estimateDaysRemaining } from "@alice-hns-wallet/domain";
+import { canAttemptRedeem, estimateDaysRemaining } from "@alice-hns-wallet/domain";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -88,7 +88,9 @@ function NameDetailPage() {
   const hasOwnReveal = detail?.reveals.some((r) => r.own) ?? false;
   const canBid = detail && (detail.state === "opening" || detail.state === "bidding");
   const canReveal = detail && detail.state === "revealing" && hasOwnBid && !hasOwnReveal;
-  const canRedeem = detail && detail.state === "closed" && hasOwnReveal;
+  // A losing reveal remains redeemable after the winner registers or transfers the name. hsd
+  // decides which of this wallet's reveals lost and omits the winning outpoint from REDEEM.
+  const canRedeem = detail && canAttemptRedeem(detail.state, hasOwnReveal);
   // hsd tracks ownership of the winning coin as soon as an auction closes, before the winner has
   // ever called REGISTER — `owned` alone doesn't imply "already registered" while state stays
   // "closed" (that only flips to "owned" once a REGISTER/UPDATE tx has landed).

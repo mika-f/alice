@@ -45,6 +45,18 @@ export interface NameReveal {
   own: boolean;
 }
 
+/**
+ * hsd accepts REDEEM once an auction has closed, including after the winning name has moved on to
+ * registration, transfer, or revocation. The wallet still lets hsd make the final per-coin
+ * decision because the winning reveal itself is not redeemable, while any additional losing
+ * reveals from the same wallet are.
+ */
+export function canAttemptRedeem(state: NameState, hasOwnReveal: boolean): boolean {
+  if (!hasOwnReveal) return false;
+
+  return state === "closed" || state === "owned" || state === "transferring" || state === "revoked";
+}
+
 export interface NameDetails extends OwnedName {
   nameHash: string;
   ownerAddress: string | null;

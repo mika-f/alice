@@ -1,3 +1,4 @@
+import type { NameState } from "@alice-hns-wallet/domain";
 import { apiFetch } from "./client.js";
 import type { BroadcastResultResponse } from "./wallet.js";
 
@@ -5,7 +6,7 @@ export type { BroadcastResultResponse } from "./wallet.js";
 
 export interface OwnedNameResponse {
   name: string;
-  state: string;
+  state: NameState;
   owned: boolean;
   renewalHeight: number;
   expirationHeight: number;
