@@ -42,13 +42,16 @@ export interface AutoBidNameSettings {
   enabled: boolean;
   budget: string;
   spent: string;
+  /** Missing on settings saved before per-Name timing was introduced. */
+  timing?: AutoBidTiming;
 }
 export interface AutoBidSettingsStatus {
   timing: AutoBidTiming;
   increment: string;
   passphraseConfigured: boolean;
 }
-export interface AutoBidNameSettingsStatus extends AutoBidNameSettings {
+export interface AutoBidNameSettingsStatus extends Omit<AutoBidNameSettings, "timing"> {
+  timing: AutoBidTiming;
   remaining: string;
 }
 
@@ -207,14 +210,26 @@ const DEFAULT_AUTO_BID_SETTINGS: AutoBidSettings = {
 
 export function getAutoBidSettings(db: Db, encryptionKey: string): AutoBidSettings {
   const [row] = db.select().from(settings).where(eq(settings.key, AUTO_BID_SETTINGS_KEY)).all();
-  if (!row) return DEFAULT_AUTO_BID_SETTINGS;
+  if (!row) return { ...DEFAULT_AUTO_BID_SETTINGS, names: {}, respondedTo: {}, scheduled: {} };
   try {
     const parsed = JSON.parse(decrypt(row.value, encryptionKey)) as Partial<AutoBidSettings>;
+    const timing = parsed.timing === "before-reveal" ? "before-reveal" : "next-block";
+    const names: Record<string, AutoBidNameSettings> = {};
+    for (const [name, nameSettings] of Object.entries(parsed.names ?? {})) {
+      names[name] = {
+        ...nameSettings,
+        timing:
+          nameSettings.timing === "next-block" || nameSettings.timing === "before-reveal"
+            ? nameSettings.timing
+            : undefined,
+      };
+    }
     return {
       ...DEFAULT_AUTO_BID_SETTINGS,
       ...parsed,
+      timing,
       passphrase: typeof parsed.passphrase === "string" ? parsed.passphrase : null,
-      names: parsed.names ?? {},
+      names,
       respondedTo: parsed.respondedTo ?? {},
       scheduled: parsed.scheduled ?? {},
     };
@@ -257,23 +272,38 @@ export function getAutoBidNameSettings(
   db: Db,
   encryptionKey: string,
   name: string,
-): AutoBidNameSettings {
-  return (
-    getAutoBidSettings(db, encryptionKey).names[name] ?? { enabled: false, budget: "0", spent: "0" }
-  );
+): AutoBidNameSettings & { timing: AutoBidTiming } {
+  const settings = getAutoBidSettings(db, encryptionKey);
+  const nameSettings = settings.names[name];
+  return nameSettings
+    ? { ...nameSettings, timing: nameSettings.timing ?? settings.timing }
+    : {
+        enabled: false,
+        budget: "0",
+        spent: "0",
+        timing: settings.timing,
+      };
 }
 
 export function setAutoBidNameSettings(
   db: Db,
   encryptionKey: string,
   name: string,
-  input: { enabled: boolean; budget: string },
-): AutoBidNameSettings {
+  input: { enabled: boolean; budget: string; timing: AutoBidTiming },
+): AutoBidNameSettings & { timing: AutoBidTiming } {
   const settings = getAutoBidSettings(db, encryptionKey);
-  const next = { enabled: input.enabled, budget: input.budget, spent: "0" };
+  const existing = settings.names[name];
+  const next = {
+    enabled: input.enabled,
+    budget: input.budget,
+    spent: existing?.spent ?? "0",
+    timing: input.timing,
+  };
   settings.names[name] = next;
-  if (!next.enabled) {
+  if (!next.enabled || existing?.timing !== next.timing) {
     delete settings.scheduled[name];
+  }
+  if (!next.enabled) {
     delete settings.respondedTo[name];
   }
   saveAutoBidSettings(db, encryptionKey, settings);
@@ -329,6 +359,8 @@ export function toAutoBidSettingsStatus(input: AutoBidSettings): AutoBidSettings
   };
 }
 
-export function toAutoBidNameSettingsStatus(input: AutoBidNameSettings): AutoBidNameSettingsStatus {
+export function toAutoBidNameSettingsStatus(
+  input: AutoBidNameSettings & { timing: AutoBidTiming },
+): AutoBidNameSettingsStatus {
   return { ...input, remaining: (BigInt(input.budget) - BigInt(input.spent)).toString() };
 }

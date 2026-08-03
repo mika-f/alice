@@ -362,11 +362,15 @@ describe("StatusPoller", () => {
     it("bids the public competing lockup plus the configured increment on the next block", async () => {
       db = freshDb();
       setAutoBidSettings(db, ENCRYPTION_KEY, {
-        timing: "next-block",
+        timing: "before-reveal",
         increment: "1000000",
         passphrase: "wallet-secret",
       });
-      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "next-block",
+      });
       // `NameDetails.blockHeight` is the name's own state-entry height (fixed here), distinct from
       // the actual chain tip that drives "next block" scheduling — kept constant on purpose to
       // prove the poller reacts to `overrides.chainHeight`, not `detail.blockHeight`.
@@ -398,16 +402,27 @@ describe("StatusPoller", () => {
       });
       expect(getAutoBidSettings(db, ENCRYPTION_KEY).names.example?.spent).toBe("3000000");
       expect(listNotifications(db).some((n) => n.type === "auto-bid-placed")).toBe(true);
+
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "before-reveal",
+      });
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).names.example?.spent).toBe("3000000");
     });
 
     it("never broadcasts an automatic bid above the configured budget", async () => {
       db = freshDb();
       setAutoBidSettings(db, ENCRYPTION_KEY, {
-        timing: "before-reveal",
+        timing: "next-block",
         increment: "1000000",
         passphrase: "wallet-secret",
       });
-      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "2500000" });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "2500000",
+        timing: "before-reveal",
+      });
       const { manager, adapter } = fakeManager(
         {},
         [ownedName({ name: "example", state: "bidding", blocksRemaining: 2 })],
@@ -436,7 +451,11 @@ describe("StatusPoller", () => {
         increment: "1000000",
         passphrase: "wallet-secret",
       });
-      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "next-block",
+      });
       const overrides = { chainHeight: 100 };
       const { manager, adapter } = fakeManager(
         overrides,
@@ -476,7 +495,11 @@ describe("StatusPoller", () => {
         increment: "1000000",
         passphrase: "wallet-secret",
       });
-      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", { enabled: true, budget: "5000000" });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "next-block",
+      });
       const { manager, adapter } = fakeManager(
         { status: false },
         [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],

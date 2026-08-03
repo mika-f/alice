@@ -231,7 +231,8 @@ function AuctionSettingsPage() {
         </div>
         <p className="muted">
           For auctions where this wallet has already placed a bid, watch for a new competing bid and
-          submit one automatic bid at the chosen time. Set each name's allowance from its name page.
+          submit one automatic bid. Set each name's timing and allowance from its name page; the
+          timing below is the default for names that have not been configured individually.
         </p>
         {autoBidSaved && <div className="success-banner">Saved.</div>}
         <form
@@ -243,7 +244,7 @@ function AuctionSettingsPage() {
           }}
         >
           <div className="field">
-            <label htmlFor="auto-bid-timing">Submit at</label>
+            <label htmlFor="auto-bid-timing">Default submit time</label>
             <select
               id="auto-bid-timing"
               value={autoBidTiming}

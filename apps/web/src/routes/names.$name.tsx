@@ -63,11 +63,13 @@ function NameDetailPage() {
   });
   const [autoBidEnabled, setAutoBidEnabled] = useState(false);
   const [autoBidBudget, setAutoBidBudget] = useState("1");
+  const [autoBidTiming, setAutoBidTiming] = useState<"next-block" | "before-reveal">("next-block");
   const [autoBidPassword, setAutoBidPassword] = useState("");
   useEffect(() => {
     if (!autoBidQuery.data) return;
     setAutoBidEnabled(autoBidQuery.data.enabled);
     setAutoBidBudget(formatHns(autoBidQuery.data.budget));
+    setAutoBidTiming(autoBidQuery.data.timing);
   }, [autoBidQuery.data]);
   const autoBidMutation = useMutation({
     mutationFn: async () => {
@@ -75,6 +77,7 @@ function NameDetailPage() {
       return setNameAutoBidSettings(name, {
         enabled: autoBidEnabled,
         budget: parseHnsToSmallestUnit(autoBidBudget),
+        timing: autoBidTiming,
       });
     },
     onSuccess: () => {
@@ -261,8 +264,9 @@ function NameDetailPage() {
                 </div>
               </div>
               <p className="muted">
-                This budget is only for {name}. Automatic bids use the shared timing and increment
-                settings, while their total is deducted from this name's allowance.
+                This budget and submission timing apply only to {name}. The shared additional amount
+                is added to the highest competing lockup, and each bid is deducted from this name's
+                allowance.
               </p>
               <form
                 className="settings-form"
@@ -279,6 +283,19 @@ function NameDetailPage() {
                   />
                   Automatically respond to competing bids for {name}
                 </label>
+                <div className="field">
+                  <label htmlFor="name-auto-bid-timing">Submit at</label>
+                  <select
+                    id="name-auto-bid-timing"
+                    value={autoBidTiming}
+                    onChange={(e) =>
+                      setAutoBidTiming(e.target.value as "next-block" | "before-reveal")
+                    }
+                  >
+                    <option value="next-block">The next block</option>
+                    <option value="before-reveal">Two blocks before reveal</option>
+                  </select>
+                </div>
                 <div className="field">
                   <label htmlFor="name-auto-bid-budget">Total budget (HNS)</label>
                   <input

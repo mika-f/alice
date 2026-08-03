@@ -39,6 +39,7 @@ export type AutoBidSettingsRequestBody = z.infer<typeof autoBidSettingsRequestSc
 export const nameAutoBidSettingsRequestSchema = z.object({
   enabled: z.boolean(),
   budget: z.string().regex(/^[1-9][0-9]*$/),
+  timing: z.enum(["next-block", "before-reveal"]),
 });
 export type NameAutoBidSettingsRequestBody = z.infer<typeof nameAutoBidSettingsRequestSchema>;
 

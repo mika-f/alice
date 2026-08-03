@@ -69,6 +69,7 @@ export interface NameAutoBidSettingsResponse {
   budget: string;
   spent: string;
   remaining: string;
+  timing: "next-block" | "before-reveal";
 }
 
 export function getNameAutoBidSettings(name: string): Promise<NameAutoBidSettingsResponse> {
@@ -77,7 +78,11 @@ export function getNameAutoBidSettings(name: string): Promise<NameAutoBidSetting
 
 export function setNameAutoBidSettings(
   name: string,
-  input: { enabled: boolean; budget: string },
+  input: {
+    enabled: boolean;
+    budget: string;
+    timing: "next-block" | "before-reveal";
+  },
 ): Promise<NameAutoBidSettingsResponse> {
   return apiFetch(`/api/names/${encodeURIComponent(name)}/auto-bid`, {
     method: "PUT",

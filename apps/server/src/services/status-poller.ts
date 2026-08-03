@@ -259,7 +259,7 @@ export class StatusPoller {
     const existing = settings.scheduled[item.name];
     if (!existing || existing.fingerprint !== fingerprint) {
       const targetHeight =
-        settings.timing === "next-block"
+        (nameSettings.timing ?? settings.timing) === "next-block"
           ? currentHeight + 1
           : currentHeight + Math.max(item.blocksRemaining - 2, 0);
       scheduleAutoBid(this.db!, this.encryptionKey, item.name, fingerprint, targetHeight);
