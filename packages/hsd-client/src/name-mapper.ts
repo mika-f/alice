@@ -124,20 +124,30 @@ export function toNameResource(
   };
 }
 
-/**
- * Bulk listing (spec §14.1) fetches ~100 names in one request and can't afford a per-name
- * ownership lookup, so `owned` is approximated from the global auction outcome recorded by hsd.
- * A wallet that placed a losing bid on a name someone else won will show as owned here until its
- * detail view — which does an authoritative per-name coin lookup, see HsdV8Adapter.getName — is
- * opened. The bulk endpoint also never decodes the resource, so `resourceSummary` is just a byte
- * count rather than a real record summary.
- */
-export function toOwnedName(raw: RawName): OwnedName {
+function toWalletNameState(raw: RawName, owned: boolean): NameState {
   const state = toNameState(raw);
+
+  // NameState is global chain state. REGISTER, TRANSFER, and REVOKE are therefore visible to every
+  // wallet that participated in the auction, including losing bidders. In wallet-facing data,
+  // these ownership states only apply when the current owner outpoint is actually in this wallet.
+  if (!owned && (state === "owned" || state === "transferring" || state === "revoked")) {
+    return "closed";
+  }
+
+  return state;
+}
+
+/**
+ * Bulk listing (spec §14.1) receives authoritative ownership derived from the wallet's UTXO set.
+ * The endpoint never decodes resources, so `resourceSummary` is a byte count rather than a real
+ * record summary.
+ */
+export function toOwnedName(raw: RawName, owned: boolean): OwnedName {
+  const state = toWalletNameState(raw, owned);
   return {
     name: raw.name,
     state,
-    owned: state === "owned" || state === "transferring" || state === "revoked",
+    owned,
     renewalHeight: raw.renewal,
     expirationHeight: raw.stats?.renewalPeriodEnd ?? 0,
     blocksRemaining: blocksRemainingFromStats(raw.stats),
@@ -235,7 +245,7 @@ export function toNameDetails(
   return {
     name: raw.name,
     nameHash: raw.nameHash,
-    state: toNameState(raw),
+    state: toWalletNameState(raw, ownership.owned),
     owned: ownership.owned,
     ownerAddress: ownership.ownerAddress,
     blockHeight: raw.height,

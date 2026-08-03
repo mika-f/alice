@@ -558,7 +558,7 @@ describe.skipIf(!available)("HsdV8Adapter against a live regtest hsd", () => {
       expect(registered.owned).toBe(true);
     }, 60_000);
 
-    it("lets a losing bidder REDEEM their lockup back, and rejects the winner's own redeem attempt", async () => {
+    it("keeps a registered name unowned for the loser and lets them REDEEM their lockup", async () => {
       const winner = await freshWallet();
       const loser = await freshWallet();
       const name = `alicep6redeem${randomUUID().slice(0, 8)}`;
@@ -586,6 +586,14 @@ describe.skipIf(!available)("HsdV8Adapter against a live regtest hsd", () => {
 
       const closed = await winner.client.getName(name);
       expect(closed.state).toBe("closed");
+
+      await retry(winner.addr, () => winner.client.updateName({ name, records: [] }), 8, 3);
+      await mineTo(winner.addr, 3);
+
+      const loserListItem = (await loser.client.getNames()).find((item) => item.name === name);
+      expect(loserListItem).toMatchObject({ state: "closed", owned: false });
+      const loserDetail = await loser.client.getName(name);
+      expect(loserDetail).toMatchObject({ state: "closed", owned: false });
 
       const redeemPreview = await loser.client.previewRedeemName(name);
       expect(redeemPreview.fee).toBeGreaterThan(0n);

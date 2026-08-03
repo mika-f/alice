@@ -132,18 +132,39 @@ describe("toOwnedName", () => {
         state: "BIDDING",
         stats: { bidPeriodStart: 10, bidPeriodEnd: 15, blocksUntilReveal: 4 },
       }),
+      false,
     );
     expect(owned.blocksRemaining).toBe(4);
   });
 
   it("summarizes the resource as a byte count without decoding it", () => {
-    const owned = toOwnedName(baseName({ data: "0001036e73" }));
+    const owned = toOwnedName(baseName({ data: "0001036e73" }), false);
     expect(owned.resourceSummary).toBe("5 bytes");
   });
 
   it("is null when there is no resource set", () => {
-    const owned = toOwnedName(baseName({ data: "" }));
+    const owned = toOwnedName(baseName({ data: "" }), false);
     expect(owned.resourceSummary).toBeNull();
+  });
+
+  it("does not expose another bidder's registered name as owned", () => {
+    const name = toOwnedName(
+      baseName({ state: "CLOSED", registered: true, owner: AN_OWNER }),
+      false,
+    );
+
+    expect(name.state).toBe("closed");
+    expect(name.owned).toBe(false);
+  });
+
+  it("exposes a registered name as owned when its owner outpoint belongs to the wallet", () => {
+    const name = toOwnedName(
+      baseName({ state: "CLOSED", registered: true, owner: AN_OWNER }),
+      true,
+    );
+
+    expect(name.state).toBe("owned");
+    expect(name.owned).toBe(true);
   });
 });
 
@@ -227,6 +248,7 @@ describe("toNameDetails", () => {
       { owned: false, ownerAddress: null },
     );
     expect(details.owned).toBe(false);
+    expect(details.state).toBe("closed");
     expect(details.ownerAddress).toBeNull();
   });
 

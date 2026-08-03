@@ -13,7 +13,7 @@ describe("isSupportedHsdVersion", () => {
   });
 });
 
-describe("HsdV8Adapter.getName", () => {
+describe("HsdV8Adapter name queries", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -70,6 +70,39 @@ describe("HsdV8Adapter.getName", () => {
       walletId: "primary",
     });
   }
+
+  it("derives list ownership from the wallet UTXO set instead of global registration state", async () => {
+    const wonOwner = { hash: "b".repeat(64), index: 1 };
+    const lostOwner = { hash: "c".repeat(64), index: 2 };
+
+    stubHttp({
+      wallet: (path) => {
+        if (path === "/wallet/primary/name") {
+          return [
+            { ...baseName, name: "won-name", owner: wonOwner, data: "" },
+            { ...baseName, name: "lost-name", owner: lostOwner, data: "" },
+          ];
+        }
+        if (path === "/wallet/primary/coin") {
+          return [
+            { hash: wonOwner.hash, index: wonOwner.index, value: 1000, address: "hs1qowner" },
+          ];
+        }
+        throw new Error(`unexpected wallet path ${path}`);
+      },
+    });
+
+    const names = await makeAdapter().getNames();
+
+    expect(names.find((name) => name.name === "won-name")).toMatchObject({
+      state: "owned",
+      owned: true,
+    });
+    expect(names.find((name) => name.name === "lost-name")).toMatchObject({
+      state: "closed",
+      owned: false,
+    });
+  });
 
   it("recovers a resource the wallet's own copy has lost, by trusting the node's namestate", () => {
     // Reproduces the reported bug: the wallet's `/auction/:name` reports an empty `data` (as

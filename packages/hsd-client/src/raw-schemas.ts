@@ -185,6 +185,14 @@ export const rawCoinSchema = z.object({
 
 export type RawCoin = z.infer<typeof rawCoinSchema>;
 
+/** GET /wallet/:id/coin — unlike the single-coin endpoint, every entry identifies its outpoint. */
+export const rawWalletCoinSchema = rawCoinSchema.extend({
+  hash: z.string(),
+  index: z.number().int().nonnegative(),
+});
+
+export type RawWalletCoin = z.infer<typeof rawWalletCoinSchema>;
+
 /**
  * hsd's dns/resource.js Resource.toJSON(). `type` is a free-form string — hsd supports record
  * kinds beyond the 7 this app decodes (spec §16.1), so this is intentionally permissive and the

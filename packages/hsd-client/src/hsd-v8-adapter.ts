@@ -45,6 +45,7 @@ import {
   rawTxSchema,
   rawWalletAddressSchema,
   rawWalletBalanceSchema,
+  rawWalletCoinSchema,
   rawWalletInfoSchema,
   type RawAuction,
   type RawCovenantPreview,
@@ -256,12 +257,27 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
     });
   }
 
-  /** Spec §14.1: the ~100-name list is fetched in a single request; no per-name RPC calls here. */
+  /**
+   * Spec §14.1: fetch names and the wallet UTXO set in two bulk requests, never per-name calls.
+   * hsd's name state is global and marks a registered auction as owned even for losing bidders;
+   * matching each current owner outpoint against the UTXO set makes ownership wallet-specific.
+   */
   async getNames(): Promise<OwnedName[]> {
-    const raw = z
-      .array(rawNameSchema)
-      .parse(await this.wallet.get(`/wallet/${this.walletId}/name`));
-    return raw.map(toOwnedName);
+    const [rawNames, rawCoins] = await Promise.all([
+      this.wallet
+        .get(`/wallet/${this.walletId}/name`)
+        .then((value) => z.array(rawNameSchema).parse(value)),
+      this.wallet
+        .get(`/wallet/${this.walletId}/coin`)
+        .then((value) => z.array(rawWalletCoinSchema).parse(value)),
+    ]);
+    const ownedOutpoints = new Set(
+      rawCoins.map((coin) => `${coin.hash.toLowerCase()}:${coin.index}`),
+    );
+
+    return rawNames.map((raw) =>
+      toOwnedName(raw, ownedOutpoints.has(`${raw.owner.hash.toLowerCase()}:${raw.owner.index}`)),
+    );
   }
 
   /**
