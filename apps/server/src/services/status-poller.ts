@@ -256,16 +256,26 @@ export class StatusPoller {
       .join(",");
     if (settings.respondedTo[item.name] === fingerprint) return;
 
-    const existing = settings.scheduled[item.name];
-    if (!existing || existing.fingerprint !== fingerprint) {
-      const targetHeight =
-        (nameSettings.timing ?? settings.timing) === "next-block"
-          ? currentHeight + 1
-          : currentHeight + Math.max(item.blocksRemaining - 2, 0);
+    // hsd validates a bid for walletHeight + 1, i.e. the block it can next be mined in. To get
+    // "next block" semantics we must therefore broadcast at the current tip, not wait for the
+    // next block and accidentally target the one after it. Apply the same one-block lead time
+    // when aiming for two blocks before REVEAL.
+    const targetHeight =
+      (nameSettings.timing ?? settings.timing) === "next-block"
+        ? currentHeight
+        : currentHeight + Math.max(item.blocksRemaining - 3, 0);
+    let scheduled = settings.scheduled[item.name];
+    if (
+      !scheduled ||
+      scheduled.fingerprint !== fingerprint ||
+      scheduled.targetHeight > targetHeight
+    ) {
+      // The last condition also advances reservations persisted by versions that scheduled one
+      // block too late, so deploying this fix takes effect without toggling each name's settings.
       scheduleAutoBid(this.db!, this.encryptionKey, item.name, fingerprint, targetHeight);
-      return;
+      scheduled = { fingerprint, targetHeight };
     }
-    if (currentHeight < existing.targetHeight) return;
+    if (currentHeight < scheduled.targetHeight) return;
     if (this.autoBiddingNames.has(item.name) || this.autoBidExecutionActive) return;
 
     const highestCompetitorLockup = competitors.reduce(
@@ -311,10 +321,16 @@ export class StatusPoller {
       });
       recordAudit(this.db!, { action: "name.auto_bid", target: item.name, outcome: "success" });
     } catch (error) {
+      const message = errorMessage(error);
+      // Once hsd says the auction can no longer accept bids, retrying the same competitor set on
+      // every poll can never succeed and only floods notifications until the wallet changes phase.
+      if (message.includes("Name is not available:")) {
+        markAutoBidResponse(this.db!, this.encryptionKey, item.name, fingerprint);
+      }
       this.notify({
         type: "auto-bid-failed",
         name: item.name,
-        message: `${item.name}: automatic bid failed to broadcast — ${errorMessage(error)}`,
+        message: `${item.name}: automatic bid failed to broadcast — ${message}`,
       });
       recordAudit(this.db!, {
         action: "name.auto_bid",

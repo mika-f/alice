@@ -8,6 +8,7 @@ import { setExternalNotificationSettings } from "./external-notification-service
 import {
   getAutoBidSettings,
   listNotifications,
+  scheduleAutoBid,
   setAutoBidNameSettings,
   setAutoBidSettings,
   setAutoRevealSettings,
@@ -359,7 +360,7 @@ describe("StatusPoller", () => {
       );
     });
 
-    it("bids the public competing lockup plus the configured increment on the next block", async () => {
+    it("broadcasts immediately so the automatic bid can be mined in the next block", async () => {
       db = freshDb();
       setAutoBidSettings(db, ENCRYPTION_KEY, {
         timing: "before-reveal",
@@ -391,10 +392,6 @@ describe("StatusPoller", () => {
       const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
 
       await poller.refresh();
-      expect(adapter.bidName).not.toHaveBeenCalled();
-
-      overrides.chainHeight = 101;
-      await poller.refresh();
       expect(adapter.bidName).toHaveBeenCalledWith({
         name: "example",
         bid: 3000000n,
@@ -409,6 +406,84 @@ describe("StatusPoller", () => {
         timing: "before-reveal",
       });
       expect(getAutoBidSettings(db, ENCRYPTION_KEY).names.example?.spent).toBe("3000000");
+    });
+
+    it("broadcasts one block early enough to be mined two blocks before reveal", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "before-reveal",
+      });
+      const overrides = { chainHeight: 100 };
+      const { manager, adapter } = fakeManager(
+        overrides,
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).scheduled.example?.targetHeight).toBe(107);
+      expect(adapter.bidName).not.toHaveBeenCalled();
+
+      overrides.chainHeight = 106;
+      await poller.refresh();
+      expect(adapter.bidName).not.toHaveBeenCalled();
+
+      overrides.chainHeight = 107;
+      await poller.refresh();
+      expect(adapter.bidName).toHaveBeenCalledWith({
+        name: "example",
+        bid: 3000000n,
+        lockup: 3000000n,
+      });
+    });
+
+    it("advances a next-block reservation persisted by the previous scheduling behavior", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "next-block",
+      });
+      const fingerprint = "100:2000000";
+      scheduleAutoBid(db, ENCRYPTION_KEY, "example", fingerprint, 101);
+      const { manager, adapter } = fakeManager(
+        { chainHeight: 100 },
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 10 })],
+        undefined,
+        async () =>
+          nameDetails({
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+
+      expect(adapter.bidName).toHaveBeenCalledTimes(1);
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).scheduled.example).toBeUndefined();
     });
 
     it("never broadcasts an automatic bid above the configured budget", async () => {
@@ -476,8 +551,6 @@ describe("StatusPoller", () => {
       const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
 
       await poller.refresh();
-      overrides.chainHeight = 101;
-      await poller.refresh();
 
       expect(adapter.bidName).toHaveBeenCalled();
       const notifications = listNotifications(db);
@@ -486,6 +559,45 @@ describe("StatusPoller", () => {
           (n) => n.type === "auto-bid-failed" && n.message.includes("insufficient funds"),
         ),
       ).toBe(true);
+    });
+
+    it("does not retry a competitor set after hsd says the name is no longer available", async () => {
+      db = freshDb();
+      setAutoBidSettings(db, ENCRYPTION_KEY, {
+        timing: "next-block",
+        increment: "1000000",
+        passphrase: "wallet-secret",
+      });
+      setAutoBidNameSettings(db, ENCRYPTION_KEY, "example", {
+        enabled: true,
+        budget: "5000000",
+        timing: "next-block",
+      });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "bidding", blocksRemaining: 1 })],
+        undefined,
+        async () =>
+          nameDetails({
+            bids: [
+              { value: 1000000n, lockup: 1000000n, height: 99, own: true },
+              { value: null, lockup: 2000000n, height: 100, own: false },
+            ],
+          }),
+      );
+      adapter.bidName = vi.fn(async () => {
+        throw new Error("hsd request failed: Name is not available: example.");
+      });
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      await poller.refresh();
+
+      expect(adapter.bidName).toHaveBeenCalledTimes(1);
+      expect(getAutoBidSettings(db, ENCRYPTION_KEY).respondedTo.example).toBeDefined();
+      expect(
+        listNotifications(db).filter((notification) => notification.type === "auto-bid-failed"),
+      ).toHaveLength(1);
     });
 
     it("does not schedule or execute an automatic bid when the current chain height is unknown", async () => {
