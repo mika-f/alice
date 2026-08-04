@@ -12,10 +12,21 @@ function toCovenantType(action: string): CovenantType {
 }
 
 function classifyKind(raw: RawTx): TransactionKind {
-  if (raw.outputs.some((output) => output.covenant.action !== "NONE")) {
+  const spendsWalletCoin = raw.inputs.some((input) => input.path !== null);
+  const hasWalletCovenantOutput = raw.outputs.some(
+    (output) => output.path !== null && output.covenant.action !== "NONE",
+  );
+
+  // A transaction can pay this wallet while carrying an unrelated covenant for
+  // somebody else. Only classify it as our name operation when the covenant
+  // output belongs to us, or when the transaction spends one of our coins.
+  if (
+    hasWalletCovenantOutput ||
+    (spendsWalletCoin && raw.outputs.some((output) => output.covenant.action !== "NONE"))
+  ) {
     return "name-operation";
   }
-  return raw.inputs.some((input) => input.path !== null) ? "send" : "receive";
+  return spendsWalletCoin ? "send" : "receive";
 }
 
 function classifyStatus(raw: RawTx): TransactionStatus {

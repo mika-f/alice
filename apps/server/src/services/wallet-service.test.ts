@@ -128,6 +128,34 @@ describe("send (idempotency)", () => {
 });
 
 describe("getTransactions / setTxMeta", () => {
+  it("recovers a received amount from an address issued by Alice when hsd omits ownership", async () => {
+    const hsd = fakeHsd({ addresses: ["rs1qsomeone"] });
+    await issueReceiveAddress(db, hsd);
+    const getTransactionsMock = (hsd as { getTransactions: ReturnType<typeof vi.fn> })
+      .getTransactions;
+    getTransactionsMock.mockResolvedValue({
+      items: [
+        {
+          txid: "missing-path",
+          kind: "receive",
+          amount: 0n,
+          fee: 0n,
+          timestamp: 1000,
+          blockHeight: 1,
+          confirmations: 5,
+          status: "confirmed",
+          inputs: [],
+          outputs: [{ address: "rs1qsomeone", value: 250n, covenant: "NONE" }],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const page = await getTransactions(db, hsd, { limit: 10 });
+    expect(page.items[0]?.kind).toBe("receive");
+    expect(page.items[0]?.amount).toBe(250n);
+  });
+
   it("merges locally stored labels and memos into hsd's transaction history", async () => {
     const hsd = fakeHsd();
     setTxMeta(db, "abc123", { label: "Salary", memo: "June" });

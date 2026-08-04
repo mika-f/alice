@@ -147,14 +147,38 @@ export async function getTransactions(
   const page = await hsd.getTransactions(query);
   const metaRows = db.select().from(txMeta).all();
   const metaByTxid = new Map(metaRows.map((row) => [row.txid, row]));
+  const issuedAddresses = new Set(
+    db
+      .select({ address: addresses.address })
+      .from(addresses)
+      .all()
+      .map((row) => row.address),
+  );
 
   return {
     ...page,
     items: page.items.map((item) => {
+      // hsd normally marks wallet-owned outputs with a derivation path. Some
+      // history records omit it, which leaves an incoming transaction at 0 HNS
+      // after adapter mapping. Alice has an authoritative local record of every
+      // address it issued, so use that only as a receive-side fallback.
+      const issuedAddressAmount =
+        item.kind === "receive" && item.amount === 0n
+          ? item.outputs
+              .filter(
+                (output) =>
+                  output.covenant === "NONE" &&
+                  output.address !== undefined &&
+                  issuedAddresses.has(output.address),
+              )
+              .reduce((sum, output) => sum + output.value, 0n)
+          : 0n;
+      const normalizedItem =
+        issuedAddressAmount > 0n ? { ...item, amount: issuedAddressAmount } : item;
       const meta = metaByTxid.get(item.txid);
       return meta
-        ? { ...item, label: meta.label ?? undefined, memo: meta.memo ?? undefined }
-        : item;
+        ? { ...normalizedItem, label: meta.label ?? undefined, memo: meta.memo ?? undefined }
+        : normalizedItem;
     }),
   };
 }

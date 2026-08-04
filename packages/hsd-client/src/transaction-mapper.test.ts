@@ -91,6 +91,32 @@ describe("toTransactionRecord", () => {
     expect(record.outputs[0]?.covenant).toBe("RENEW");
   });
 
+  it("keeps an incoming payment as receive when another wallet owns the covenant output", () => {
+    const raw = baseTx({
+      confirmations: 1,
+      height: 5,
+      inputs: [{ value: 1_000_000, address: "rs1qsender", path: null }],
+      outputs: [
+        {
+          value: 250_000,
+          address: "rs1qours",
+          covenant: { type: 0, action: "NONE", items: [] },
+          path: OURS,
+        },
+        {
+          value: 0,
+          address: "rs1qtheirname",
+          covenant: { type: 6, action: "RENEW", items: ["abcd"] },
+          path: null,
+        },
+      ],
+    });
+
+    const record = toTransactionRecord(raw);
+    expect(record.kind).toBe("receive");
+    expect(record.amount).toBe(250_000n);
+  });
+
   it("falls back to NONE for a covenant action hsd hasn't taught us yet", () => {
     const raw = baseTx({
       outputs: [
