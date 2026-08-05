@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { reauth } from "../api/auth.js";
+import { ApiError } from "../api/client.js";
 import {
   getName,
   getNameAutoBidSettings,
@@ -65,6 +66,8 @@ function NameDetailPage() {
   const [autoBidBudget, setAutoBidBudget] = useState("1");
   const [autoBidTiming, setAutoBidTiming] = useState<"next-block" | "before-reveal">("next-block");
   const [autoBidPassword, setAutoBidPassword] = useState("");
+  const [autoBidError, setAutoBidError] = useState<string | null>(null);
+  const [autoBidSaved, setAutoBidSaved] = useState(false);
   useEffect(() => {
     if (!autoBidQuery.data) return;
     setAutoBidEnabled(autoBidQuery.data.enabled);
@@ -82,7 +85,15 @@ function NameDetailPage() {
     },
     onSuccess: () => {
       setAutoBidPassword("");
+      setAutoBidError(null);
+      setAutoBidSaved(true);
       queryClient.invalidateQueries({ queryKey: ["name-auto-bid", name] });
+    },
+    onError: (err) => {
+      setAutoBidSaved(false);
+      setAutoBidError(
+        err instanceof ApiError ? err.message : "Failed to save automatic bid settings",
+      );
     },
   });
   const hasOwnReveal = detail?.reveals.some((r) => r.own) ?? false;
@@ -270,10 +281,13 @@ function NameDetailPage() {
                 is added to the highest competing lockup, and each bid is deducted from this name's
                 allowance.
               </p>
+              {autoBidSaved && <div className="success-banner">Saved.</div>}
+              {autoBidError && <div className="error-banner">{autoBidError}</div>}
               <form
                 className="settings-form"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  setAutoBidSaved(false);
                   autoBidMutation.mutate();
                 }}
               >
