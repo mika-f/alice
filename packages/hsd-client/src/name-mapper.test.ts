@@ -137,6 +137,19 @@ describe("toOwnedName", () => {
     expect(owned.blocksRemaining).toBe(4);
   });
 
+  it("recomputes blocks remaining from the node height when the wallet height trails", () => {
+    const owned = toOwnedName(
+      baseName({
+        state: "BIDDING",
+        stats: { bidPeriodStart: 10, bidPeriodEnd: 15, blocksUntilReveal: 4 },
+      }),
+      false,
+      12,
+    );
+
+    expect(owned.blocksRemaining).toBe(3);
+  });
+
   it("summarizes the resource as a byte count without decoding it", () => {
     const owned = toOwnedName(baseName({ data: "0001036e73" }), false);
     expect(owned.resourceSummary).toBe("5 bytes");

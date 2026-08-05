@@ -25,10 +25,32 @@ export function hasOwner(owner: RawNameOwner): boolean {
   return owner.index !== NO_OWNER_INDEX;
 }
 
-function blocksRemainingFromStats(stats: Record<string, number> | null): number {
+const BLOCK_TARGET_BY_REMAINING_STAT: Record<string, string> = {
+  blocksUntilBidding: "openPeriodEnd",
+  blocksUntilClosed: "lockupPeriodEnd",
+  blocksUntilReveal: "bidPeriodEnd",
+  blocksUntilClose: "revealPeriodEnd",
+  blocksUntilExpire: "renewalPeriodEnd",
+  blocksUntilValidFinalize: "transferLockupEnd",
+  blocksUntilReopen: "revokePeriodEnd",
+};
+
+function blocksRemainingFromStats(
+  stats: Record<string, number> | null,
+  currentHeight?: number,
+): number {
   if (!stats) return 0;
   const key = Object.keys(stats).find((k) => k.startsWith("blocksUntil"));
   if (key === undefined) return 0;
+
+  // hsd's wallet name endpoints calculate blocksUntil* against wdb.height. The wallet DB can
+  // briefly trail the node tip by one block, so prefer the phase's absolute end height whenever
+  // the caller has the current node height available.
+  const targetKey = BLOCK_TARGET_BY_REMAINING_STAT[key];
+  if (currentHeight !== undefined && targetKey !== undefined && stats[targetKey] !== undefined) {
+    return Math.max(0, stats[targetKey] - currentHeight);
+  }
+
   return Math.max(0, stats[key] as number);
 }
 
@@ -142,7 +164,7 @@ function toWalletNameState(raw: RawName, owned: boolean): NameState {
  * The endpoint never decodes resources, so `resourceSummary` is a byte count rather than a real
  * record summary.
  */
-export function toOwnedName(raw: RawName, owned: boolean): OwnedName {
+export function toOwnedName(raw: RawName, owned: boolean, currentHeight?: number): OwnedName {
   const state = toWalletNameState(raw, owned);
   return {
     name: raw.name,
@@ -150,7 +172,7 @@ export function toOwnedName(raw: RawName, owned: boolean): OwnedName {
     owned,
     renewalHeight: raw.renewal,
     expirationHeight: raw.stats?.renewalPeriodEnd ?? 0,
-    blocksRemaining: blocksRemainingFromStats(raw.stats),
+    blocksRemaining: blocksRemainingFromStats(raw.stats, currentHeight),
     transferState: toTransferState(raw),
     resourceSummary: raw.data.length > 0 ? `${raw.data.length / 2} bytes` : null,
     updatedAt: Date.now(),

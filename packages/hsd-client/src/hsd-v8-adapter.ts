@@ -263,20 +263,25 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
    * matching each current owner outpoint against the UTXO set makes ownership wallet-specific.
    */
   async getNames(): Promise<OwnedName[]> {
-    const [rawNames, rawCoins] = await Promise.all([
+    const [rawNames, rawCoins, rawNode] = await Promise.all([
       this.wallet
         .get(`/wallet/${this.walletId}/name`)
         .then((value) => z.array(rawNameSchema).parse(value)),
       this.wallet
         .get(`/wallet/${this.walletId}/coin`)
         .then((value) => z.array(rawWalletCoinSchema).parse(value)),
+      this.node.get("/").then((value) => rawNodeInfoSchema.parse(value)),
     ]);
     const ownedOutpoints = new Set(
       rawCoins.map((coin) => `${coin.hash.toLowerCase()}:${coin.index}`),
     );
 
     return rawNames.map((raw) =>
-      toOwnedName(raw, ownedOutpoints.has(`${raw.owner.hash.toLowerCase()}:${raw.owner.index}`)),
+      toOwnedName(
+        raw,
+        ownedOutpoints.has(`${raw.owner.hash.toLowerCase()}:${raw.owner.index}`),
+        rawNode.chain.height,
+      ),
     );
   }
 
@@ -301,9 +306,13 @@ export class HsdV8Adapter implements HandshakeNodeClient, HandshakeWalletClient 
         ? rawNameResourceSchema.nullable().parse(await this.node.rpc("getnameresource", [name]))
         : null;
 
-    const ownership = await this.resolveOwnership(raw.owner);
+    const ownership = await this.resolveOwnership(nodeInfo?.owner ?? raw.owner);
 
-    return toNameDetails({ ...raw, data: dataHex }, resource, ownership);
+    // The node's name state/stats are calculated at the current chain tip, while the wallet copy
+    // can briefly trail by a block. Keep wallet-only bids/reveals, but use node state for display.
+    const current = nodeInfo ? { ...raw, ...nodeInfo, bids: raw.bids, reveals: raw.reveals } : raw;
+
+    return toNameDetails({ ...current, data: dataHex }, resource, ownership);
   }
 
   /**

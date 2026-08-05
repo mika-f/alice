@@ -43,6 +43,7 @@ describe("HsdV8Adapter name queries", () => {
   function stubHttp(handlers: {
     wallet?: (path: string, body: unknown) => unknown;
     node?: (body: { method: string; params: unknown[] }) => unknown;
+    nodeHttp?: (path: string) => unknown;
   }): void {
     vi.stubGlobal(
       "fetch",
@@ -53,6 +54,20 @@ describe("HsdV8Adapter name queries", () => {
           return new Response(JSON.stringify(handlers.wallet?.(path, body) ?? {}), { status: 200 });
         }
         if (url.startsWith("http://node")) {
+          const path = url.replace("http://node", "");
+          if (!body) {
+            return new Response(
+              JSON.stringify(
+                handlers.nodeHttp?.(path) ?? {
+                  version: "8.0.0",
+                  network: "regtest",
+                  chain: { height: 12, progress: 1 },
+                  pool: { outbound: 0, inbound: 0 },
+                },
+              ),
+              { status: 200 },
+            );
+          }
           const result = handlers.node?.(body as { method: string; params: unknown[] });
           return new Response(JSON.stringify({ result, error: null }), { status: 200 });
         }
@@ -76,6 +91,12 @@ describe("HsdV8Adapter name queries", () => {
     const lostOwner = { hash: "c".repeat(64), index: 2 };
 
     stubHttp({
+      nodeHttp: () => ({
+        version: "8.0.0",
+        network: "regtest",
+        chain: { height: 339606, progress: 1 },
+        pool: { outbound: 0, inbound: 0 },
+      }),
       wallet: (path) => {
         if (path === "/wallet/primary/name") {
           return [
@@ -97,6 +118,9 @@ describe("HsdV8Adapter name queries", () => {
     expect(names.find((name) => name.name === "won-name")).toMatchObject({
       state: "owned",
       owned: true,
+      // The wallet's blocksUntilExpire is 105109 at height 339605. The node has already reached
+      // the next block, so the displayed value must be derived from its current height instead.
+      blocksRemaining: 105108,
     });
     expect(names.find((name) => name.name === "lost-name")).toMatchObject({
       state: "closed",
