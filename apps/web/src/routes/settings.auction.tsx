@@ -5,9 +5,11 @@ import { useSession } from "../hooks/useSession.js";
 import {
   getRevealThresholds,
   getAutoRevealSettings,
+  getAutoRedeemSettings,
   getAutoBidSettings,
   setAutoBidSettings,
   setAutoRevealSettings,
+  setAutoRedeemSettings,
   setRevealThresholds,
 } from "../api/notifications.js";
 import { useEffect, useState } from "react";
@@ -36,6 +38,11 @@ function AuctionSettingsPage() {
     queryFn: getAutoRevealSettings,
     enabled: session.data?.authenticated === true,
   });
+  const autoRedeemQuery = useQuery({
+    queryKey: ["auto-redeem-settings"],
+    queryFn: getAutoRedeemSettings,
+    enabled: session.data?.authenticated === true,
+  });
   const autoBidQuery = useQuery({
     queryKey: ["auto-bid-settings"],
     queryFn: getAutoBidSettings,
@@ -48,6 +55,10 @@ function AuctionSettingsPage() {
   const [autoRevealPassphrase, setAutoRevealPassphrase] = useState("");
   const [autoRevealAdminPassword, setAutoRevealAdminPassword] = useState("");
   const [autoRevealSaved, setAutoRevealSaved] = useState(false);
+  const [autoRedeemEnabled, setAutoRedeemEnabled] = useState(false);
+  const [autoRedeemPassphrase, setAutoRedeemPassphrase] = useState("");
+  const [autoRedeemAdminPassword, setAutoRedeemAdminPassword] = useState("");
+  const [autoRedeemSaved, setAutoRedeemSaved] = useState(false);
   const [autoBidTiming, setAutoBidTiming] = useState<"next-block" | "before-reveal">("next-block");
   const [autoBidIncrement, setAutoBidIncrement] = useState("1");
   const [autoBidPassphrase, setAutoBidPassphrase] = useState("");
@@ -63,6 +74,9 @@ function AuctionSettingsPage() {
   useEffect(() => {
     if (autoRevealQuery.data) setAutoRevealEnabled(autoRevealQuery.data.enabled);
   }, [autoRevealQuery.data]);
+  useEffect(() => {
+    if (autoRedeemQuery.data) setAutoRedeemEnabled(autoRedeemQuery.data.enabled);
+  }, [autoRedeemQuery.data]);
   useEffect(() => {
     if (!autoBidQuery.data) return;
     setAutoBidTiming(autoBidQuery.data.timing);
@@ -90,6 +104,21 @@ function AuctionSettingsPage() {
       setAutoRevealAdminPassword("");
       setAutoRevealSaved(true);
       queryClient.invalidateQueries({ queryKey: ["auto-reveal-settings"] });
+    },
+  });
+  const saveAutoRedeemMutation = useMutation({
+    mutationFn: async () => {
+      await reauth({ method: "password", password: autoRedeemAdminPassword });
+      return setAutoRedeemSettings({
+        enabled: autoRedeemEnabled,
+        passphrase: autoRedeemPassphrase,
+      });
+    },
+    onSuccess: () => {
+      setAutoRedeemPassphrase("");
+      setAutoRedeemAdminPassword("");
+      setAutoRedeemSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["auto-redeem-settings"] });
     },
   });
   const saveAutoBidMutation = useMutation({
@@ -219,6 +248,74 @@ function AuctionSettingsPage() {
           </p>
           <button type="submit" className="button" disabled={saveAutoRevealMutation.isPending}>
             {saveAutoRevealMutation.isPending ? "Saving…" : "Save"}
+          </button>
+        </form>
+      </section>
+      <section className="settings-section" aria-labelledby="auto-redeem-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Auction recovery</span>
+            <h2 id="auto-redeem-heading">Automatic redeem</h2>
+          </div>
+        </div>
+        <p className="muted">
+          Automatically redeem losing revealed bids as soon as the auction closes. The winning
+          reveal is left untouched, and hsd makes the final decision about which lockups can be
+          redeemed.
+        </p>
+
+        {autoRedeemSaved && <div className="success-banner">Saved.</div>}
+
+        <form
+          className="card settings-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAutoRedeemSaved(false);
+            saveAutoRedeemMutation.mutate();
+          }}
+        >
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={autoRedeemEnabled}
+              onChange={(e) => {
+                setAutoRedeemEnabled(e.target.checked);
+                setAutoRedeemSaved(false);
+              }}
+            />
+            Automatically redeem losing bids
+          </label>
+          <div className="field">
+            <label htmlFor="auto-redeem-passphrase">Wallet passphrase</label>
+            <input
+              id="auto-redeem-passphrase"
+              type="password"
+              autoComplete="new-password"
+              value={autoRedeemPassphrase}
+              placeholder={
+                autoRedeemQuery.data?.passphraseConfigured
+                  ? "Saved — enter a new value to replace it"
+                  : "Leave empty only if your wallet has no passphrase"
+              }
+              onChange={(e) => setAutoRedeemPassphrase(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="auto-redeem-admin-password">Confirm with your app password</label>
+            <input
+              id="auto-redeem-admin-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={autoRedeemAdminPassword}
+              onChange={(e) => setAutoRedeemAdminPassword(e.target.value)}
+            />
+          </div>
+          <p className="muted">
+            Disabling this feature removes its saved wallet passphrase and completion history.
+          </p>
+          <button type="submit" className="button" disabled={saveAutoRedeemMutation.isPending}>
+            {saveAutoRedeemMutation.isPending ? "Saving…" : "Save"}
           </button>
         </form>
       </section>

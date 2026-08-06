@@ -15,6 +15,7 @@ import { dispatchExternalNotification } from "./external-notification-service.js
 const RENEWAL_THRESHOLDS_KEY = "renewal_thresholds";
 const REVEAL_THRESHOLDS_KEY = "reveal_thresholds";
 const AUTO_REVEAL_SETTINGS_KEY = "auto_reveal_settings";
+const AUTO_REDEEM_SETTINGS_KEY = "auto_redeem_settings";
 const AUTO_BID_SETTINGS_KEY = "auto_bid_settings";
 
 export interface AutoRevealSettings {
@@ -24,6 +25,19 @@ export interface AutoRevealSettings {
 }
 
 export interface AutoRevealSettingsStatus {
+  enabled: boolean;
+  passphraseConfigured: boolean;
+}
+
+export interface AutoRedeemSettings {
+  enabled: boolean;
+  /** Only available to the background worker, never returned by the settings API. */
+  passphrase: string | null;
+  /** Own-reveal fingerprints already redeemed, or confirmed by hsd as not redeemable. */
+  handled: Record<string, string>;
+}
+
+export interface AutoRedeemSettingsStatus {
   enabled: boolean;
   passphraseConfigured: boolean;
 }
@@ -197,6 +211,63 @@ export function setAutoRevealSettings(
     db.insert(settings).values({ key: AUTO_REVEAL_SETTINGS_KEY, value }).run();
   }
   return next;
+}
+
+/** The passphrase and handled fingerprints share one encrypted settings record. */
+export function getAutoRedeemSettings(db: Db, encryptionKey: string): AutoRedeemSettings {
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_REDEEM_SETTINGS_KEY)).all();
+  if (!row) return { enabled: false, passphrase: null, handled: {} };
+
+  try {
+    const parsed = JSON.parse(decrypt(row.value, encryptionKey)) as Partial<AutoRedeemSettings>;
+    return {
+      enabled: parsed.enabled === true,
+      passphrase: typeof parsed.passphrase === "string" ? parsed.passphrase : null,
+      handled: parsed.handled ?? {},
+    };
+  } catch {
+    return { enabled: false, passphrase: null, handled: {} };
+  }
+}
+
+function saveAutoRedeemSettings(db: Db, encryptionKey: string, next: AutoRedeemSettings): void {
+  const value = encrypt(JSON.stringify(next), encryptionKey);
+  const [row] = db.select().from(settings).where(eq(settings.key, AUTO_REDEEM_SETTINGS_KEY)).all();
+  if (row) {
+    db.update(settings).set({ value }).where(eq(settings.key, AUTO_REDEEM_SETTINGS_KEY)).run();
+  } else {
+    db.insert(settings).values({ key: AUTO_REDEEM_SETTINGS_KEY, value }).run();
+  }
+}
+
+export function setAutoRedeemSettings(
+  db: Db,
+  encryptionKey: string,
+  input: { enabled: boolean; passphrase: string },
+): AutoRedeemSettings {
+  const existing = getAutoRedeemSettings(db, encryptionKey);
+  const next: AutoRedeemSettings = {
+    enabled: input.enabled,
+    passphrase: input.enabled ? input.passphrase || existing.passphrase : null,
+    handled: input.enabled ? existing.handled : {},
+  };
+  saveAutoRedeemSettings(db, encryptionKey, next);
+  return next;
+}
+
+export function markAutoRedeemHandled(
+  db: Db,
+  encryptionKey: string,
+  name: string,
+  fingerprint: string,
+): void {
+  const settings = getAutoRedeemSettings(db, encryptionKey);
+  settings.handled[name] = fingerprint;
+  saveAutoRedeemSettings(db, encryptionKey, settings);
+}
+
+export function toAutoRedeemSettingsStatus(input: AutoRedeemSettings): AutoRedeemSettingsStatus {
+  return { enabled: input.enabled, passphraseConfigured: input.passphrase !== null };
 }
 
 const DEFAULT_AUTO_BID_SETTINGS: AutoBidSettings = {

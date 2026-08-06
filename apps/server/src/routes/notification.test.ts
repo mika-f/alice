@@ -194,6 +194,30 @@ describe("notification routes", () => {
     expect(await fetched.json()).toEqual({ enabled: true, passphraseConfigured: true });
   });
 
+  it("stores automatic-redeem passphrases privately", async () => {
+    const app = buildApp();
+    const jar = cookieJar();
+    const csrf = await setUpAndLogIn(app, jar);
+
+    const reauthRes = await req(app, jar, "POST", "/api/auth/reauth", csrf, {
+      method: "password",
+      password: "correct-horse-battery-staple",
+    });
+    expect(reauthRes.status).toBe(200);
+
+    const saved = await req(app, jar, "PUT", "/api/settings/auto-redeem", csrf, {
+      enabled: true,
+      passphrase: "wallet-secret",
+    });
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(await saved.json())).not.toContain("wallet-secret");
+
+    const fetched = await app.request("/api/settings/auto-redeem", {
+      headers: { cookie: jar.header() },
+    });
+    expect(await fetched.json()).toEqual({ enabled: true, passphraseConfigured: true });
+  });
+
   describe("external notifications (spec §20.2)", () => {
     it("reports disabled/unconfigured channels by default, never leaking a URL", async () => {
       const app = buildApp();

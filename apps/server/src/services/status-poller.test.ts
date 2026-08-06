@@ -11,6 +11,7 @@ import {
   scheduleAutoBid,
   setAutoBidNameSettings,
   setAutoBidSettings,
+  setAutoRedeemSettings,
   setAutoRevealSettings,
 } from "./notification-service.js";
 import { RescanTracker } from "./rescan-tracker.js";
@@ -62,6 +63,7 @@ function fakeManager(
     unlock: vi.fn(async () => undefined),
     lock: vi.fn(async () => undefined),
     revealName: vi.fn(async () => ({ txid: "c".repeat(64), fee: 1n })),
+    redeemName: vi.fn(async () => ({ txid: "e".repeat(64), fee: 1n })),
     bidName: vi.fn(async () => ({ txid: "d".repeat(64), fee: 1n })),
   };
   const manager = { get: () => adapter } as never;
@@ -358,6 +360,76 @@ describe("StatusPoller", () => {
       expect(listNotifications(db).some((n) => n.type === "reveal-deadline-approaching")).toBe(
         false,
       );
+    });
+
+    it("automatically redeems an own reveal once the auction closes", async () => {
+      db = freshDb();
+      setAutoRedeemSettings(db, ENCRYPTION_KEY, { enabled: true, passphrase: "wallet-secret" });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "closed" })],
+        undefined,
+        async () =>
+          nameDetails({
+            state: "closed",
+            reveals: [{ value: 100n, height: 2, own: true }],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      await poller.refresh();
+
+      expect(adapter.redeemName).toHaveBeenCalledTimes(1);
+      expect(adapter.redeemName).toHaveBeenCalledWith("example");
+      expect(listWatchedBroadcasts(db)).toEqual([
+        expect.objectContaining({ txid: "e".repeat(64), label: "example" }),
+      ]);
+    });
+
+    it("does not automatically redeem an own reveal before the auction closes", async () => {
+      db = freshDb();
+      setAutoRedeemSettings(db, ENCRYPTION_KEY, { enabled: true, passphrase: "wallet-secret" });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "revealing" })],
+        undefined,
+        async () =>
+          nameDetails({
+            state: "revealing",
+            reveals: [{ value: 100n, height: 2, own: true }],
+          }),
+      );
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+
+      expect(adapter.redeemName).not.toHaveBeenCalled();
+    });
+
+    it("does not repeatedly try to redeem the winning reveal after hsd rejects it", async () => {
+      db = freshDb();
+      setAutoRedeemSettings(db, ENCRYPTION_KEY, { enabled: true, passphrase: "wallet-secret" });
+      const { manager, adapter } = fakeManager(
+        {},
+        [ownedName({ name: "example", state: "closed" })],
+        undefined,
+        async () =>
+          nameDetails({
+            state: "closed",
+            reveals: [{ value: 100n, height: 2, own: true }],
+          }),
+      );
+      adapter.redeemName = vi.fn(async () => {
+        throw new Error("hsd request failed: No reveals to redeem for name: example.");
+      });
+      const poller = new StatusPoller(manager, db, undefined, null, ENCRYPTION_KEY);
+
+      await poller.refresh();
+      await poller.refresh();
+
+      expect(adapter.redeemName).toHaveBeenCalledTimes(1);
+      expect(listWatchedBroadcasts(db)).toHaveLength(0);
     });
 
     it("broadcasts immediately so the automatic bid can be mined in the next block", async () => {

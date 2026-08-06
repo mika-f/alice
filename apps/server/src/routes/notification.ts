@@ -1,6 +1,7 @@
 import {
   externalNotificationSettingsRequestSchema,
   autoRevealSettingsRequestSchema,
+  autoRedeemSettingsRequestSchema,
   autoBidSettingsRequestSchema,
   renewalThresholdsRequestSchema,
   revealThresholdsRequestSchema,
@@ -20,15 +21,18 @@ import {
 import {
   getRenewalThresholds,
   getAutoRevealSettings,
+  getAutoRedeemSettings,
   getAutoBidSettings,
   getRevealThresholds,
   listNotifications,
   markNotificationRead,
   setRenewalThresholds,
   setAutoRevealSettings,
+  setAutoRedeemSettings,
   setAutoBidSettings,
   setRevealThresholds,
   toAutoRevealSettingsStatus,
+  toAutoRedeemSettingsStatus,
   toAutoBidSettingsStatus,
 } from "../services/notification-service.js";
 import type { AppEnv } from "../types.js";
@@ -84,6 +88,24 @@ export function createNotificationRoutes(db: Db, env: Env) {
       if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
       const settings = setAutoRevealSettings(db, env.ENCRYPTION_KEY, parsed.data);
       return c.json(toAutoRevealSettingsStatus(settings));
+    },
+  );
+
+  app.get("/settings/auto-redeem", requireAuth(), (c) => {
+    return c.json(toAutoRedeemSettingsStatus(getAutoRedeemSettings(db, env.ENCRYPTION_KEY)));
+  });
+
+  app.put(
+    "/settings/auto-redeem",
+    auditLog(db, env, "settings.auto_redeem"),
+    requireReauth(),
+    async (c) => {
+      const parsed = autoRedeemSettingsRequestSchema.safeParse(
+        await c.req.json().catch(() => null),
+      );
+      if (!parsed.success) return c.json({ error: "Invalid request" }, 400);
+      const settings = setAutoRedeemSettings(db, env.ENCRYPTION_KEY, parsed.data);
+      return c.json(toAutoRedeemSettingsStatus(settings));
     },
   );
 

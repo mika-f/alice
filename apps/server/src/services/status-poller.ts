@@ -1,4 +1,5 @@
 import {
+  canAttemptRedeem,
   classifyRenewal,
   classifyReveal,
   type NodeStatus,
@@ -20,10 +21,12 @@ import {
 import {
   createNotification,
   getAutoRevealSettings,
+  getAutoRedeemSettings,
   getAutoBidSettings,
   getRenewalThresholds,
   getRevealThresholds,
   markAutoBidResponse,
+  markAutoRedeemHandled,
   recordAutoBidSpend,
   scheduleAutoBid,
 } from "./notification-service.js";
@@ -73,6 +76,7 @@ export class StatusPoller {
   private readonly lastTransferState = new Map<string, TransferState>();
   private readonly lastRevealCategory = new Map<string, RevealCategory>();
   private readonly autoRevealingNames = new Set<string>();
+  private readonly autoRedeemingNames = new Set<string>();
   private readonly autoBiddingNames = new Set<string>();
   private autoBidExecutionActive = false;
 
@@ -184,6 +188,7 @@ export class StatusPoller {
     const thresholds = getRenewalThresholds(this.db!);
     const revealThresholds = getRevealThresholds(this.db!);
     const autoRevealSettings = getAutoRevealSettings(this.db!, this.encryptionKey ?? "");
+    const autoRedeemSettings = getAutoRedeemSettings(this.db!, this.encryptionKey ?? "");
 
     for (const item of names) {
       const category = classifyRenewal(item, thresholds);
@@ -224,6 +229,77 @@ export class StatusPoller {
 
       await this.checkRevealNotification(hsd, item, revealThresholds, autoRevealSettings);
       await this.checkAutoBid(hsd, item, currentHeight);
+      await this.checkAutoRedeem(hsd, item, autoRedeemSettings);
+    }
+  }
+
+  private async checkAutoRedeem(
+    hsd: HsdV8Adapter,
+    item: OwnedName,
+    settings: {
+      enabled: boolean;
+      passphrase: string | null;
+      handled: Record<string, string>;
+    },
+  ): Promise<void> {
+    if (!settings.enabled || !this.encryptionKey || !canAttemptRedeem(item.state, true)) return;
+
+    const detail = await hsd.getName(item.name);
+    const ownReveals = detail.reveals.filter((reveal) => reveal.own);
+    if (!canAttemptRedeem(item.state, ownReveals.length > 0)) return;
+
+    // A name can be auctioned again later, so key completion to the exact own-reveal set rather
+    // than suppressing the name forever after one auction has been handled.
+    const fingerprint = ownReveals
+      .map((reveal) => `${reveal.height}:${reveal.value}`)
+      .sort()
+      .join(",");
+    if (settings.handled[item.name] === fingerprint) return;
+
+    await this.autoRedeem(hsd, item.name, fingerprint, settings.passphrase);
+  }
+
+  /** Unlocks only for the redeem broadcast; transient failures retry on a later poll. */
+  private async autoRedeem(
+    hsd: HsdV8Adapter,
+    name: string,
+    fingerprint: string,
+    passphrase: string | null,
+  ): Promise<void> {
+    if (this.autoRedeemingNames.has(name)) return;
+    this.autoRedeemingNames.add(name);
+    let unlockedByAutoRedeem = false;
+    try {
+      const status = await hsd.getWalletStatus();
+      if (status.locked) {
+        if (passphrase === null)
+          throw new Error("Wallet is locked and no passphrase is configured");
+        await hsd.unlock(passphrase, 60);
+        unlockedByAutoRedeem = true;
+      }
+      const result = await hsd.redeemName(name);
+      watchBroadcast(this.db!, result.txid, name);
+      markAutoRedeemHandled(this.db!, this.encryptionKey!, name, fingerprint);
+      recordAudit(this.db!, { action: "name.auto_redeem", target: name, outcome: "success" });
+    } catch (error) {
+      // A winning reveal is intentionally left for hsd to classify. Once it confirms there is no
+      // losing reveal to redeem, remember this reveal set so we do not retry it every 30 seconds.
+      if (errorMessage(error).includes("No reveals to redeem for name:")) {
+        markAutoRedeemHandled(this.db!, this.encryptionKey!, name, fingerprint);
+      }
+      recordAudit(this.db!, {
+        action: "name.auto_redeem",
+        target: name,
+        outcome: "failure",
+        detail: "Automatic redeem failed",
+      });
+    } finally {
+      if (unlockedByAutoRedeem) {
+        await hsd.lock().catch(() => {
+          // The original broadcast outcome is already recorded; never leave the poller unhandled.
+        });
+      }
+      this.autoRedeemingNames.delete(name);
     }
   }
 

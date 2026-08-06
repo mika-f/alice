@@ -27,6 +27,11 @@ export const autoRevealSettingsRequestSchema = z.object({
 
 export type AutoRevealSettingsRequestBody = z.infer<typeof autoRevealSettingsRequestSchema>;
 
+/** Automatic redeem has the same encrypted wallet-unlock requirements as automatic reveal. */
+export const autoRedeemSettingsRequestSchema = autoRevealSettingsRequestSchema;
+
+export type AutoRedeemSettingsRequestBody = z.infer<typeof autoRedeemSettingsRequestSchema>;
+
 /** Amounts are decimal strings in Handshake's smallest unit, so the server never rounds money. */
 export const autoBidSettingsRequestSchema = z.object({
   timing: z.enum(["next-block", "before-reveal"]),

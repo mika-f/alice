@@ -62,6 +62,19 @@ export function setAutoRevealSettings(input: {
   return apiFetch("/api/settings/auto-reveal", { method: "PUT", body: JSON.stringify(input) });
 }
 
+export type AutoRedeemSettingsResponse = AutoRevealSettingsResponse;
+
+export function getAutoRedeemSettings(): Promise<AutoRedeemSettingsResponse> {
+  return apiFetch("/api/settings/auto-redeem");
+}
+
+export function setAutoRedeemSettings(input: {
+  enabled: boolean;
+  passphrase: string;
+}): Promise<AutoRedeemSettingsResponse> {
+  return apiFetch("/api/settings/auto-redeem", { method: "PUT", body: JSON.stringify(input) });
+}
+
 export interface AutoBidSettingsResponse {
   timing: "next-block" | "before-reveal";
   increment: string;
