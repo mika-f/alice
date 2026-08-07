@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { formatHns, parseHnsToSmallestUnit } from "../lib/hns.js";
 import { reauth } from "../api/auth.js";
+import { ApiError } from "../api/client.js";
 import { SettingsPageHeader } from "../components/SettingsPageHeader.js";
 
 export const auctionSettingsRoute = createRoute({
@@ -64,6 +65,7 @@ function AuctionSettingsPage() {
   const [autoBidPassphrase, setAutoBidPassphrase] = useState("");
   const [autoBidAdminPassword, setAutoBidAdminPassword] = useState("");
   const [autoBidSaved, setAutoBidSaved] = useState(false);
+  const [autoBidError, setAutoBidError] = useState<string | null>(null);
 
   useEffect(() => {
     if (revealThresholdsQuery.data) {
@@ -134,7 +136,14 @@ function AuctionSettingsPage() {
       setAutoBidPassphrase("");
       setAutoBidAdminPassword("");
       setAutoBidSaved(true);
+      setAutoBidError(null);
       queryClient.invalidateQueries({ queryKey: ["auto-bid-settings"] });
+    },
+    onError: (err) => {
+      setAutoBidSaved(false);
+      setAutoBidError(
+        err instanceof ApiError ? err.message : "Failed to save automatic bid settings",
+      );
     },
   });
 
@@ -332,11 +341,13 @@ function AuctionSettingsPage() {
           timing below is the default for names that have not been configured individually.
         </p>
         {autoBidSaved && <div className="success-banner">Saved.</div>}
+        {autoBidError && <div className="error-banner">{autoBidError}</div>}
         <form
           className="card settings-form"
           onSubmit={(e) => {
             e.preventDefault();
             setAutoBidSaved(false);
+            setAutoBidError(null);
             saveAutoBidMutation.mutate();
           }}
         >
