@@ -192,4 +192,43 @@ describe("HsdV8Adapter name queries", () => {
         expect(detail.resource).toBeNull();
       });
   });
+
+  it("does not show a registered later lifecycle as expired when hsd's wallet state is stale", async () => {
+    // `expired` is retained by hsd after the first lifecycle expires. The wallet's historical
+    // auction record may therefore still say CLOSED, while getnameinfo() reflects the new auction
+    // lifecycle. A renewalPeriodEnd plus a matching wallet UTXO proves that the name is now
+    // registered and owned, so the detail response must not retain the old Expired status.
+    stubHttp({
+      wallet: (path) => {
+        if (path.startsWith("/wallet/primary/auction/")) {
+          return { ...baseName, data: "", expired: true, bids: [], reveals: [] };
+        }
+        if (path.startsWith("/wallet/primary/coin/")) {
+          return { value: 1000, address: "hs1qowner" };
+        }
+        throw new Error(`unexpected wallet path ${path}`);
+      },
+      node: ({ method }) => {
+        if (method === "getnameinfo") {
+          return {
+            start: { reserved: false, week: 0, start: 0 },
+            info: {
+              ...baseName,
+              data: "",
+              state: "CLOSED",
+              registered: false,
+              expired: true,
+              stats: { renewalPeriodEnd: 444206, blocksUntilExpire: 102660 },
+            },
+          };
+        }
+        throw new Error(`unexpected rpc ${method}`);
+      },
+    });
+
+    await expect(makeAdapter().getName("natsuneko")).resolves.toMatchObject({
+      state: "owned",
+      owned: true,
+    });
+  });
 });

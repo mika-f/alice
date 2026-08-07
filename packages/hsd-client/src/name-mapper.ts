@@ -149,6 +149,14 @@ export function toNameResource(
 function toWalletNameState(raw: RawName, owned: boolean): NameState {
   const state = toNameState(raw);
 
+  // `registered` comes from the wallet's copied NameState and can remain false after a name has
+  // been registered in a subsequent lifecycle. Ownership is resolved separately from the wallet's
+  // UTXO set. A renewalPeriodEnd only exists for a registered name, so together these facts are
+  // authoritative even when hsd also retains its historical `expired` flag.
+  if (owned && state === "expired" && raw.stats?.renewalPeriodEnd !== undefined) {
+    return "owned";
+  }
+
   // NameState is global chain state. REGISTER, TRANSFER, and REVOKE are therefore visible to every
   // wallet that participated in the auction, including losing bidders. In wallet-facing data,
   // these ownership states only apply when the current owner outpoint is actually in this wallet.

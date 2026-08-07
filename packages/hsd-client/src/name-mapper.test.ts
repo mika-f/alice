@@ -179,6 +179,21 @@ describe("toOwnedName", () => {
     expect(name.state).toBe("owned");
     expect(name.owned).toBe(true);
   });
+
+  it("does not show a registered later lifecycle as expired when hsd's wallet state is stale", () => {
+    const name = toOwnedName(
+      baseName({
+        state: "CLOSED",
+        registered: false,
+        expired: true,
+        owner: AN_OWNER,
+        stats: { renewalPeriodEnd: 444206, blocksUntilExpire: 102660 },
+      }),
+      true,
+    );
+
+    expect(name.state).toBe("owned");
+  });
 });
 
 describe("toNameAvailability", () => {
